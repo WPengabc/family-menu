@@ -1,0 +1,14 @@
+{
+  "name": "家庭点菜",
+  "short_name": "点菜",
+  "description": "家庭离线点菜与订单互通（PWA）",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F3EBDD",
+  "theme_color": "#F3EBDD",
+  "icons": [
+    { "src": "/vite.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
+
