@@ -83,6 +83,15 @@ export async function clearStore(storeName) {
   await db.clear(storeName)
 }
 
+/** 单表整表替换（与全量 pull 中的单表语义一致） */
+export async function replaceTableRows(storeName, rows) {
+  const db = await getDb()
+  const tx = db.transaction(storeName, 'readwrite')
+  await tx.store.clear()
+  for (const r of rows) await tx.store.put(r)
+  await tx.done
+}
+
 /**
  * 拉取云端后一次性替换三个表，避免「先 clear 再写入」分事务导致其它页面读到空库。
  */

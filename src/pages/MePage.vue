@@ -1,7 +1,9 @@
 <script setup>
+defineOptions({ name: 'MePage' })
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { appState, refreshAuth, refreshFamily, runSync, showError, showOk } from '../lib/appState'
+import { familySyncBus } from '../lib/familySyncBus'
 import {
   createFamily,
   getFamilyInfo,
@@ -254,7 +256,21 @@ onMounted(async () => {
 watch(
   () => appState.syncing,
   async (syncing, prevSyncing) => {
-    if (prevSyncing && !syncing && route.path === '/me') await reloadMeLists()
+    if (!prevSyncing || syncing || route.path !== '/me') return
+    if (appState.lastSyncPullCount > 0) await reloadMeLists()
+  },
+)
+
+let meRemoteDebounce = null
+watch(
+  () => [familySyncBus.dishesRev, familySyncBus.categoriesRev],
+  () => {
+    if (route.path !== '/me') return
+    clearTimeout(meRemoteDebounce)
+    meRemoteDebounce = setTimeout(async () => {
+      await refreshDishes()
+      await refreshCategories()
+    }, 200)
   },
 )
 

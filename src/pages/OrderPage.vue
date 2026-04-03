@@ -1,11 +1,14 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+defineOptions({ name: 'OrderPage' })
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { createOrderLocal, enqueueCloudOp, getCategories, getDishes } from '../lib/dataService'
 import { appState, showError, showOk } from '../lib/appState'
+import { familySyncBus } from '../lib/familySyncBus'
 import DishThumb from '../components/DishThumb.vue'
 
 const router = useRouter()
+const route = useRoute()
 
 const categories = ref([])
 const activeCategoryId = ref('all')
@@ -52,6 +55,16 @@ async function genOrder() {
 }
 
 onMounted(refresh)
+
+let menuDebounce = null
+watch(
+  () => [familySyncBus.dishesRev, familySyncBus.categoriesRev],
+  () => {
+    if (route.path !== '/order') return
+    clearTimeout(menuDebounce)
+    menuDebounce = setTimeout(() => void refresh(), 200)
+  },
+)
 </script>
 
 <template>

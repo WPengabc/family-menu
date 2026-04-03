@@ -1,9 +1,13 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+defineOptions({ name: 'HistoryPage' })
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { deleteOrderLocal, enqueueCloudOp, listOrders } from '../lib/dataService'
 import { appState, showError, showOk } from '../lib/appState'
+import { familySyncBus } from '../lib/familySyncBus'
 import { formatTime } from '../lib/utils'
 
+const route = useRoute()
 const filterDays = ref(7) // 7 / 30 / 0(全部)
 const orders = ref([])
 
@@ -35,6 +39,14 @@ async function del(orderId) {
 }
 
 onMounted(refresh)
+
+watch(
+  () => familySyncBus.ordersRev,
+  () => {
+    if (route.path !== '/me/history') return
+    void refresh()
+  },
+)
 </script>
 
 <template>

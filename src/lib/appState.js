@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { getFamilyId, getSession, restoreFamilyFromServer, syncProfileFromSession } from './familyApi'
+import { syncFamilyRealtimeSubscription } from './realtimeFamily'
 import { syncNow } from './sync'
 import { supabase } from './supabase'
 import { seedDemoDataIfEmpty } from './demoSeed'
@@ -9,6 +10,8 @@ export const appState = reactive({
   familyId: null,
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
   syncing: false,
+  /** 最近一次完整同步拉下的行数（用于「我的」是否整页重载） */
+  lastSyncPullCount: 0,
   toast: '',
   toastType: 'ok', // ok | err
 })
@@ -64,6 +67,8 @@ export async function initApp() {
   })
 
   if (appState.session && appState.familyId) void queueSyncJob({ verboseSuccess: false })
+
+  void syncFamilyRealtimeSubscription(appState.familyId)
 }
 
 /** 串行执行同步任务，避免多处同时触发导致交错与重复 Toast */
@@ -77,8 +82,16 @@ function queueSyncJob(opts) {
   return job
 }
 
+/**
+ * 订单等：立刻把 oplog 推上云端，不做全量 pull（随后仍会由 scheduleBackgroundSync 做完整同步合并他人数据）
+ */
+export function queuePushOnlySync(familyId) {
+  if (!familyId || appState.familyId !== familyId) return
+  void queueSyncJob({ verboseSuccess: false, skipPull: true })
+}
+
 let backgroundDebounceTimer = null
-const BACKGROUND_SYNC_DEBOUNCE_MS = 520
+const BACKGROUND_SYNC_DEBOUNCE_MS = 380
 
 /**
  * 编辑/下单后的后台同步：防抖合并多次操作，成功不弹窗（失败仍提示）
@@ -93,11 +106,12 @@ export function scheduleBackgroundSync(familyId) {
   }, BACKGROUND_SYNC_DEBOUNCE_MS)
 }
 
-async function runSyncInternal({ verboseSuccess, reason }) {
+async function runSyncInternal({ verboseSuccess, reason, skipPull = false }) {
   if (!appState.familyId || !appState.session) return null
   try {
     appState.syncing = true
-    const r = await syncNow(appState.familyId)
+    const r = await syncNow(appState.familyId, { skipPull })
+    appState.lastSyncPullCount = r && typeof r.pulled === 'number' ? r.pulled : 0
     if (verboseSuccess) {
       if (r.offline) {
         toast('当前离线：已保存在本机，联网后将自动同步', 'ok')
@@ -116,14 +130,22 @@ async function runSyncInternal({ verboseSuccess, reason }) {
   }
 }
 
-export async function refreshAuth() {
+/**
+ * 仅恢复 session + 本地 familyId，不请求 Supabase profiles。
+ * 路由守卫必须用此函数，避免网络卡住导致无法进入「我的」。
+ */
+export async function refreshSessionAndFamilyFast() {
   let session = await getSession()
-  // 部分环境（移动端 WebView、冷启动）首次 getSession 可能尚未从存储恢复，短延迟再读一次
   if (!session) {
     await new Promise((r) => setTimeout(r, 80))
     session = await getSession()
   }
   appState.session = session
+  appState.familyId = await getFamilyId()
+}
+
+export async function refreshAuth() {
+  await refreshSessionAndFamilyFast()
   if (appState.session) {
     try {
       await syncProfileFromSession()
@@ -131,10 +153,12 @@ export async function refreshAuth() {
       /* 未配置 Supabase 或尚无 profiles 表时不阻断 */
     }
   }
+  void syncFamilyRealtimeSubscription(appState.familyId)
 }
 
 export async function refreshFamily() {
   appState.familyId = await getFamilyId()
+  void syncFamilyRealtimeSubscription(appState.familyId)
 }
 
 /** 用户主动点击「手动同步」：显示结果摘要，并取消待执行的后台防抖任务避免连跑两次 */

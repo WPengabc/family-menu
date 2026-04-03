@@ -4,7 +4,7 @@ import App from './App.vue'
 
 import { registerSW } from 'virtual:pwa-register'
 import { router } from './router'
-import { refreshAuth, refreshFamily } from './lib/appState'
+import { refreshSessionAndFamilyFast } from './lib/appState'
 
 registerSW({
   immediate: true,
@@ -16,14 +16,14 @@ registerSW({
   },
 })
 
-// 进入「我的」前强制从 Supabase 恢复会话，避免 Tab 切换后界面误判未登录
+// 进入「我的」前只快速读本地会话，不 await profiles 等网络（否则会卡死导航）
 router.beforeEach((to, _from, next) => {
   const isMe = to.path === '/me' || to.path.startsWith('/me/')
   if (!isMe) {
     next()
     return
   }
-  Promise.all([refreshAuth(), refreshFamily()])
+  refreshSessionAndFamilyFast()
     .then(() => next())
     .catch(() => next())
 })

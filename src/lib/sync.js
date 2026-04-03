@@ -5,7 +5,12 @@ import { supabase } from './supabase'
 
 const DEFAULT_CATEGORY_ID = 'cat_home'
 
-export async function syncNow(familyId) {
+/**
+ * @param {string} familyId
+ * @param {{ skipPull?: boolean }} [options] skipPull=true 时只上传待处理 oplog，不拉取全量（订单等可立刻写库，少一次大卡的全表替换）
+ */
+export async function syncNow(familyId, options = {}) {
+  const skipPull = !!options.skipPull
   if (!familyId) return { pushed: 0, pulled: 0 }
 
   // 没网就直接跳过（不抛错，避免打扰家人）
@@ -25,7 +30,10 @@ export async function syncNow(familyId) {
   await ensureCloudSeed({ familyId })
 
   const pushed = await pushPendingOps({ familyId, deviceId })
-  const pulled = await pullRemoteState({ familyId })
+  let pulled = 0
+  if (!skipPull) {
+    pulled = await pullRemoteState({ familyId })
+  }
   return { pushed, pulled }
 }
 

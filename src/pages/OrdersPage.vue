@@ -1,9 +1,13 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+defineOptions({ name: 'OrdersPage' })
+import { onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { completeOrderLocal, deleteOrderLocal, enqueueCloudOp, listOrders } from '../lib/dataService'
 import { appState, showError, showOk } from '../lib/appState'
+import { familySyncBus } from '../lib/familySyncBus'
 import { formatTime } from '../lib/utils'
 
+const route = useRoute()
 const orders = ref([])
 
 async function refresh() {
@@ -35,6 +39,16 @@ async function del(orderId) {
 }
 
 onMounted(refresh)
+
+let ordersDebounce = null
+watch(
+  () => familySyncBus.ordersRev,
+  () => {
+    if (route.path !== '/orders') return
+    clearTimeout(ordersDebounce)
+    ordersDebounce = setTimeout(() => void refresh(), 120)
+  },
+)
 </script>
 
 <template>

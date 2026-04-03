@@ -10,7 +10,11 @@ onMounted(() => {
 
 <template>
   <AppShell>
-    <router-view />
+    <router-view v-slot="{ Component }">
+      <keep-alive :include="['OrderPage', 'OrdersPage', 'MePage', 'HistoryPage']">
+        <component :is="Component" />
+      </keep-alive>
+    </router-view>
   </AppShell>
 </template>
 

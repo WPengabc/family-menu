@@ -23,6 +23,25 @@ export async function fetchAll({ familyId }) {
   }
 }
 
+/** Realtime 增量：只拉一张表 */
+export async function fetchOrdersForFamily(familyId) {
+  const { data, error } = await supabase.from('orders').select('*').eq('family_id', familyId)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchDishesForFamily(familyId) {
+  const { data, error } = await supabase.from('dishes').select('*').eq('family_id', familyId)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchCategoriesForFamily(familyId) {
+  const { data, error } = await supabase.from('categories').select('*').eq('family_id', familyId)
+  if (error) throw error
+  return data ?? []
+}
+
 export async function upsertCategory({ familyId, row }) {
   const payload = { ...row, family_id: familyId }
   const { error } = await supabase.from('categories').upsert(payload, { onConflict: 'id' })

@@ -1,7 +1,10 @@
 import { deleteOne, getOne, listAll, putOne, upsertMany } from './localDb'
 import { genId, nowIso, simplifyIngredients } from './utils'
 import { getMyProfile, getSession, queueOp } from './familyApi'
-import { scheduleBackgroundSync } from './appState'
+import { queuePushOnlySync, scheduleBackgroundSync } from './appState'
+
+/** 订单类操作：先立刻推云端，再防抖做一次全量同步（合并他人改动） */
+const ORDER_CLOUD_OPS = new Set(['upsert_order', 'delete_order'])
 
 function sortByUpdatedAtDesc(a, b) {
   return String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? ''))
@@ -145,6 +148,9 @@ export async function enqueueCloudOp({ familyId, opType, entityId, payload }) {
   try {
     const session = await getSession()
     if (session && typeof navigator !== 'undefined' && navigator.onLine) {
+      if (ORDER_CLOUD_OPS.has(opType)) {
+        queuePushOnlySync(familyId)
+      }
       scheduleBackgroundSync(familyId)
     }
   } catch {
