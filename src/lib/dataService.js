@@ -1,7 +1,7 @@
 import { deleteOne, getOne, listAll, putOne, upsertMany } from './localDb'
 import { genId, nowIso, simplifyIngredients } from './utils'
-import { queueOp, getSession } from './familyApi'
-import { syncNow } from './sync'
+import { getMyProfile, getSession, queueOp } from './familyApi'
+import { scheduleBackgroundSync } from './appState'
 
 function sortByUpdatedAtDesc(a, b) {
   return String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? ''))
@@ -78,6 +78,23 @@ export async function listOrders() {
   })
 }
 
+async function resolvePlacedBy() {
+  const session = await getSession()
+  if (!session?.user?.id) {
+    return { created_by_user_id: null, placed_by_label: '本机（未登录）' }
+  }
+  const uid = session.user.id
+  let label = session.user.email || '已登录用户'
+  try {
+    const p = await getMyProfile()
+    if (p?.display_name?.trim()) label = p.display_name.trim()
+    else if (p?.email) label = p.email
+  } catch {
+    /* 忽略：无 profiles 表或离线 */
+  }
+  return { created_by_user_id: uid, placed_by_label: label }
+}
+
 export async function createOrderLocal(dishes) {
   const createdAt = nowIso()
   const id = `O${Date.now()}`
@@ -89,6 +106,7 @@ export async function createOrderLocal(dishes) {
     image_path: d.image_path ?? null,
     simple_ingredients: simplifyIngredients(d.ingredients_text),
   }))
+  const { created_by_user_id, placed_by_label } = await resolvePlacedBy()
   const row = {
     id,
     status: '未完成',
@@ -97,6 +115,8 @@ export async function createOrderLocal(dishes) {
     created_at: createdAt,
     completed_at: null,
     updated_at: createdAt,
+    created_by_user_id,
+    placed_by_label,
   }
   await putOne('orders', row)
   return row
@@ -121,14 +141,14 @@ export async function enqueueCloudOp({ familyId, opType, entityId, payload }) {
   if (!familyId) return
   await queueOp({ familyId, opType, entityId, payload })
 
-  // 让“家庭互通”更像真的：有网就尽快同步，不强依赖用户手动点按钮
+  // 后台防抖同步：合并短时间内的多次编辑，成功不打扰，失败仍由 appState 提示
   try {
     const session = await getSession()
     if (session && typeof navigator !== 'undefined' && navigator.onLine) {
-      void syncNow(familyId)
+      scheduleBackgroundSync(familyId)
     }
   } catch {
-    // 静默失败：不影响本地使用
+    /* 静默 */
   }
 }
 

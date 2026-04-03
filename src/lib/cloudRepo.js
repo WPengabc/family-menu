@@ -60,6 +60,8 @@ export async function upsertOrder({ familyId, row }) {
     completed_at: row.completed_at ?? null,
     updated_at: row.updated_at,
     family_id: familyId,
+    created_by_user_id: row.created_by_user_id ?? null,
+    placed_by_label: row.placed_by_label ?? null,
   }
   const { error } = await supabase.from('orders').upsert(payload, { onConflict: 'id' })
   if (error) throw error

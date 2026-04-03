@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { appState, refreshAuth, refreshFamily, runSync, showError, showOk } from '../lib/appState'
 import {
   createFamily,
@@ -26,6 +26,7 @@ import DishEditorModalImpl from '../components/DishEditorModal.vue'
 import DishThumb from '../components/DishThumb.vue'
 
 const router = useRouter()
+const route = useRoute()
 const email = ref('')
 const familyName = ref('我的家庭')
 const inviteCode = ref('')
@@ -177,6 +178,21 @@ async function refreshDishes() {
   dishes.value = await getDishes({ categoryId: 'all' })
 }
 
+/** 从 IndexedDB 重拉菜品/分类/家庭展示数据（同步完成后或从其它 Tab 回到「我的」时用） */
+async function reloadMeLists() {
+  await refreshCategories()
+  await refreshDishes()
+  familyInfo.value = await getFamilyInfo()
+  if (authed.value && inFamily.value && !familyInfo.value) {
+    try {
+      familyInfo.value = await refreshFamilyInfo()
+    } catch (e) {
+      showError(e)
+    }
+  }
+  if (authed.value && appState.familyId) await loadFamilyMembers()
+}
+
 async function delDish(id) {
   if (!confirm('确认删除该菜品？')) return
   try {
@@ -232,19 +248,15 @@ onMounted(async () => {
   await refreshAuth()
   await refreshFamily()
   await refreshNicknameFromServer()
-  await refreshCategories()
-  await refreshDishes()
-  familyInfo.value = await getFamilyInfo()
-  // 兼容：以前创建家庭时未保存 familyInfo，这里补拉一次邀请码
-  if (authed.value && inFamily.value && !familyInfo.value) {
-    try {
-      familyInfo.value = await refreshFamilyInfo()
-    } catch (e) {
-      showError(e)
-    }
-  }
-  if (authed.value && appState.familyId) await loadFamilyMembers()
+  await reloadMeLists()
 })
+
+watch(
+  () => appState.syncing,
+  async (syncing, prevSyncing) => {
+    if (prevSyncing && !syncing && route.path === '/me') await reloadMeLists()
+  },
+)
 
 watch(
   () => appState.session?.user?.id,
@@ -256,6 +268,23 @@ watch(
 </script>
 
 <template>
+  <section class="card authStrip" :class="{ off: !authed }">
+    <div class="authStripRow">
+      <span class="authDot" :class="{ on: authed }" aria-hidden="true" />
+      <template v-if="authed">
+        <span class="authMain">{{ appState.session?.user?.email }}</span>
+        <span v-if="nicknameInput.trim()" class="authNick">「{{ nicknameInput.trim() }}」</span>
+        <span class="sep">·</span>
+        <span>{{ inFamily ? '已加入家庭' : '未加入家庭' }}</span>
+      </template>
+      <template v-else>
+        <span class="authMain">未登录</span>
+        <span class="sep">·</span>
+        <span>数据仅在本机；下拉打开「家庭互通」可登录并同步</span>
+      </template>
+    </div>
+  </section>
+
   <section class="card">
     <div class="row">
       <h2>我的菜品库</h2>
@@ -280,7 +309,7 @@ watch(
     </div>
   </section>
 
-  <details class="card">
+  <details class="card" :open="authed">
     <summary class="sumTitle">家庭互通（登录后共享）</summary>
     <div class="hint">
       当前状态：
@@ -496,6 +525,27 @@ h3 { margin: 0 0 8px; font-size: 16px; }
 }
 .sumTitle { cursor: pointer; font-weight: 900; }
 .sep { margin: 0 6px; opacity: .6; }
+
+.authStrip { padding: 12px 14px; }
+.authStrip.off { opacity: 0.92; }
+.authStripRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.authDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.2);
+  flex-shrink: 0;
+}
+.authDot.on { background: #2e7d32; box-shadow: 0 0 0 3px rgba(46,125,50,0.2); }
+.authMain { font-weight: 800; word-break: break-all; }
+.authNick { font-weight: 700; opacity: 0.85; }
 
 .nickPanel {
   margin-top: 14px;

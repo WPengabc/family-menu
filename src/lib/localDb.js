@@ -83,3 +83,21 @@ export async function clearStore(storeName) {
   await db.clear(storeName)
 }
 
+/**
+ * 拉取云端后一次性替换三个表，避免「先 clear 再写入」分事务导致其它页面读到空库。
+ */
+export async function replaceFamilyPullData({ categories = [], dishes = [], orders = [] }) {
+  const db = await getDb()
+  const tx = db.transaction(['categories', 'dishes', 'orders'], 'readwrite')
+  const cat = tx.objectStore('categories')
+  await cat.clear()
+  for (const r of categories) await cat.put(r)
+  const dish = tx.objectStore('dishes')
+  await dish.clear()
+  for (const r of dishes) await dish.put(r)
+  const ord = tx.objectStore('orders')
+  await ord.clear()
+  for (const r of orders) await ord.put(r)
+  await tx.done
+}
+

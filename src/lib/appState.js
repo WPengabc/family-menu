@@ -50,24 +50,80 @@ export async function initApp() {
       }
     }
     if (appState.session && appState.familyId) {
-      void runSync('登录状态变化后自动同步')
+      void queueSyncJob({ verboseSuccess: false })
     }
   })
 
   window.addEventListener('online', () => {
     appState.online = true
-    if (appState.session && appState.familyId) void runSync('联网后自动同步')
+    if (appState.session && appState.familyId) void queueSyncJob({ verboseSuccess: false })
   })
   window.addEventListener('offline', () => {
     appState.online = false
     toast('当前离线：操作会先保存到本机，联网后自动同步', 'ok')
   })
 
-  if (appState.session && appState.familyId) void runSync('启动时自动同步')
+  if (appState.session && appState.familyId) void queueSyncJob({ verboseSuccess: false })
+}
+
+/** 串行执行同步任务，避免多处同时触发导致交错与重复 Toast */
+let syncJobChain = Promise.resolve()
+
+function queueSyncJob(opts) {
+  const job = syncJobChain.then(async () => {
+    await runSyncInternal(opts)
+  })
+  syncJobChain = job.catch(() => {})
+  return job
+}
+
+let backgroundDebounceTimer = null
+const BACKGROUND_SYNC_DEBOUNCE_MS = 520
+
+/**
+ * 编辑/下单后的后台同步：防抖合并多次操作，成功不弹窗（失败仍提示）
+ */
+export function scheduleBackgroundSync(familyId) {
+  if (!familyId) return
+  clearTimeout(backgroundDebounceTimer)
+  backgroundDebounceTimer = setTimeout(() => {
+    backgroundDebounceTimer = null
+    if (!appState.familyId || appState.familyId !== familyId) return
+    void queueSyncJob({ verboseSuccess: false })
+  }, BACKGROUND_SYNC_DEBOUNCE_MS)
+}
+
+async function runSyncInternal({ verboseSuccess, reason }) {
+  if (!appState.familyId || !appState.session) return null
+  try {
+    appState.syncing = true
+    const r = await syncNow(appState.familyId)
+    if (verboseSuccess) {
+      if (r.offline) {
+        toast('当前离线：已保存在本机，联网后将自动同步', 'ok')
+      } else if (!r.cloudDisabled) {
+        toast(`同步完成：上传 ${r.pushed} / 拉取 ${r.pulled}${reason ? `（${reason}）` : ''}`, 'ok')
+      }
+    }
+    return r
+  } catch (e) {
+    const msg = e?.message || e?.error_description || '同步失败'
+    const extra = [e?.code, e?.details, e?.hint].filter(Boolean).join(' / ')
+    toast(extra ? `${msg}（${extra}）` : msg, 'err')
+    throw e
+  } finally {
+    appState.syncing = false
+  }
 }
 
 export async function refreshAuth() {
-  appState.session = await getSession()
+  let session = await getSession()
+  // 部分环境（移动端 WebView、冷启动）首次 getSession 可能尚未从存储恢复，短延迟再读一次
+  if (!session) {
+    await new Promise((r) => setTimeout(r, 80))
+    session = await getSession()
+  }
+  appState.session = session
   if (appState.session) {
     try {
       await syncProfileFromSession()
@@ -81,27 +137,11 @@ export async function refreshFamily() {
   appState.familyId = await getFamilyId()
 }
 
-export async function runSync(reason = '') {
-  if (!appState.familyId) return
-  if (!appState.session) return
-  try {
-    appState.syncing = true
-    const r = await syncNow(appState.familyId)
-    if (r.offline) {
-      toast('当前离线：已保存到本机，联网后会自动同步', 'ok')
-    } else {
-      toast(`同步完成：上传 ${r.pushed} / 拉取 ${r.pulled}${reason ? `（${reason}）` : ''}`, 'ok')
-    }
-  } catch (e) {
-    const msg =
-      e?.message ||
-      e?.error_description ||
-      '同步失败'
-    const extra = [e?.code, e?.details, e?.hint].filter(Boolean).join(' / ')
-    toast(extra ? `${msg}（${extra}）` : msg, 'err')
-  } finally {
-    appState.syncing = false
-  }
+/** 用户主动点击「手动同步」：显示结果摘要，并取消待执行的后台防抖任务避免连跑两次 */
+export function runSync(reason = '手动同步') {
+  clearTimeout(backgroundDebounceTimer)
+  backgroundDebounceTimer = null
+  return queueSyncJob({ verboseSuccess: true, reason })
 }
 
 export function showError(e) {

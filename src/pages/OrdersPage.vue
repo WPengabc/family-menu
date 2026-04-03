@@ -59,6 +59,7 @@ onMounted(refresh)
           <span class="sep">·</span> 下单：{{ formatTime(o.created_at) }}
           <span class="sep">·</span> 完成：{{ formatTime(o.completed_at) }}
         </div>
+        <div class="placedBy">下单人：{{ o.placed_by_label || '—' }}</div>
       </div>
       <div class="actions">
         <button v-if="o.status === '未完成'" class="btn primary sm" @click="complete(o.id)">完成订单</button>
@@ -92,6 +93,7 @@ h2 { margin: 0; font-size: 18px; }
 .empty { padding: 16px 0; opacity: .8; }
 .oid { font-size: 18px; font-weight: 900; }
 .meta { margin-top: 4px; opacity: .78; line-height: 1.5; }
+.placedBy { margin-top: 6px; font-size: 15px; font-weight: 800; color: #3d3d3d; }
 .sep { margin: 0 6px; opacity: .6; }
 .ok { color: #2e7d32; }
 .actions { display:flex; gap:8px; }

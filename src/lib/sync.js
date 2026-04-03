@@ -1,5 +1,5 @@
 import { getOrCreateDeviceId, getSession } from './familyApi'
-import { oplogListPending, oplogMarkSynced, upsertMany, clearStore, listAll } from './localDb'
+import { oplogListPending, oplogMarkSynced, listAll, replaceFamilyPullData } from './localDb'
 import { cloudEnabled, deleteCategory, deleteOrder, fetchAll, upsertCategory, upsertDish, upsertOrder } from './cloudRepo'
 import { supabase } from './supabase'
 
@@ -85,14 +85,12 @@ async function pushPendingOps({ familyId, deviceId }) {
 async function pullRemoteState({ familyId }) {
   const remote = await fetchAll({ familyId })
 
-  // 为了让“云端删除”在本地不会复现，这里用“清空再写入”的方式保持一致性
-  await clearStore('categories')
-  await clearStore('dishes')
-  await clearStore('orders')
-
-  await upsertMany('categories', remote.categories)
-  await upsertMany('dishes', remote.dishes)
-  await upsertMany('orders', remote.orders)
+  // 单事务替换，避免清空与写入之间其它 Tab/页面读到空菜品库
+  await replaceFamilyPullData({
+    categories: remote.categories,
+    dishes: remote.dishes,
+    orders: remote.orders,
+  })
   return remote.categories.length + remote.dishes.length + remote.orders.length
 }
 

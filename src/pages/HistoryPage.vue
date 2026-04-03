@@ -63,6 +63,7 @@ onMounted(refresh)
           <span class="sep">·</span> 下单：{{ formatTime(o.created_at) }}
           <span class="sep">·</span> 完成：{{ formatTime(o.completed_at) }}
         </div>
+        <div class="placedBy">下单人：{{ o.placed_by_label || '—' }}</div>
         <div class="dishLine">
           菜品：{{ (o.snapshot_dishes || []).map(d => d.name).join('、') }}
         </div>
@@ -95,6 +96,7 @@ h2 { margin: 0; font-size: 18px; }
 .empty { padding: 16px 0; opacity: .8; }
 .oid { font-size: 18px; font-weight: 900; }
 .meta { margin-top: 4px; opacity: .78; line-height: 1.5; }
+.placedBy { margin-top: 6px; font-size: 15px; font-weight: 800; color: #3d3d3d; }
 .dishLine { margin-top: 6px; opacity: .82; line-height: 1.55; }
 .sep { margin: 0 6px; opacity: .6; }
 .ok { color: #2e7d32; }
