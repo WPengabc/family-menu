@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { getFamilyId, getSession, restoreFamilyFromServer } from './familyApi'
+import { getFamilyId, getSession, restoreFamilyFromServer, syncProfileFromSession } from './familyApi'
 import { syncNow } from './sync'
 import { supabase } from './supabase'
 import { seedDemoDataIfEmpty } from './demoSeed'
@@ -68,6 +68,13 @@ export async function initApp() {
 
 export async function refreshAuth() {
   appState.session = await getSession()
+  if (appState.session) {
+    try {
+      await syncProfileFromSession()
+    } catch {
+      /* 未配置 Supabase 或尚无 profiles 表时不阻断 */
+    }
+  }
 }
 
 export async function refreshFamily() {

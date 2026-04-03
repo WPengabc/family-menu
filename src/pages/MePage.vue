@@ -1,15 +1,17 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { appState, refreshAuth, refreshFamily, runSync, showError, showOk } from '../lib/appState'
 import {
   createFamily,
   getFamilyInfo,
+  getMyProfile,
   joinFamilyByInviteCode,
   listFamilyMembers,
   refreshFamilyInfo,
   signInWithOtp,
   signOut,
+  updateMyDisplayName,
 } from '../lib/familyApi'
 import {
   addCategoryLocal,
@@ -32,6 +34,8 @@ const dishes = ref([])
 const familyInfo = ref(null)
 const familyMembers = ref([])
 const membersLoading = ref(false)
+const nicknameInput = ref('')
+const nicknameSaving = ref(false)
 
 const showEditor = ref(false)
 const editingDishId = ref(null)
@@ -45,6 +49,17 @@ function shortUserId(uid) {
   const s = String(uid ?? '')
   if (s.length <= 10) return s
   return `${s.slice(0, 8)}…`
+}
+
+/** 昵称优先，其次 profiles 邮箱，再次当前会话邮箱（本人），最后短 ID */
+function memberDisplayLine(m) {
+  const name = (m.display_name ?? '').trim()
+  if (name) return name
+  if (m.email) return m.email
+  if (m.user_id === appState.session?.user?.id && appState.session?.user?.email) {
+    return appState.session.user.email
+  }
+  return shortUserId(m.user_id)
 }
 
 async function loadFamilyMembers() {
@@ -92,11 +107,38 @@ async function doSignIn() {
   }
 }
 
+async function refreshNicknameFromServer() {
+  if (!authed.value) {
+    nicknameInput.value = ''
+    return
+  }
+  try {
+    const row = await getMyProfile()
+    nicknameInput.value = (row?.display_name ?? '').trim()
+  } catch {
+    nicknameInput.value = ''
+  }
+}
+
+async function saveNickname() {
+  nicknameSaving.value = true
+  try {
+    await updateMyDisplayName(nicknameInput.value)
+    showOk('昵称已保存')
+    if (inFamily.value && appState.familyId) await loadFamilyMembers()
+  } catch (e) {
+    showError(e)
+  } finally {
+    nicknameSaving.value = false
+  }
+}
+
 async function doSignOut() {
   try {
     await signOut()
     await refreshAuth()
     await refreshFamily()
+    nicknameInput.value = ''
     showOk('已退出登录')
   } catch (e) {
     showError(e)
@@ -189,6 +231,7 @@ async function delCategory(c) {
 onMounted(async () => {
   await refreshAuth()
   await refreshFamily()
+  await refreshNicknameFromServer()
   await refreshCategories()
   await refreshDishes()
   familyInfo.value = await getFamilyInfo()
@@ -202,6 +245,14 @@ onMounted(async () => {
   }
   if (authed.value && appState.familyId) await loadFamilyMembers()
 })
+
+watch(
+  () => appState.session?.user?.id,
+  async (id) => {
+    if (id) await refreshNicknameFromServer()
+    else nicknameInput.value = ''
+  },
+)
 </script>
 
 <template>
@@ -253,6 +304,21 @@ onMounted(async () => {
         <button class="btn sm" @click="doSignOut">退出</button>
       </div>
 
+      <div class="nickPanel">
+        <h3 class="nickTitle">我的昵称</h3>
+        <div class="hint">家庭成员列表里会<strong>优先显示昵称</strong>；留空则显示邮箱。</div>
+        <div class="row nickRow">
+          <input
+            v-model="nicknameInput"
+            class="input"
+            placeholder="例如：老爸、小张"
+            maxlength="32"
+            autocomplete="nickname"
+          />
+          <button class="btn primary" :disabled="nicknameSaving" @click="saveNickname">保存昵称</button>
+        </div>
+      </div>
+
       <div v-if="!inFamily" class="grid2" style="margin-top:10px;">
         <div class="panel">
           <h3>创建家庭</h3>
@@ -299,7 +365,8 @@ onMounted(async () => {
           </div>
           <ul v-else class="memberList">
             <li v-for="m in familyMembers" :key="m.user_id">
-              <span class="mono">{{ shortUserId(m.user_id) }}</span>
+              <span class="memberPrimary">{{ memberDisplayLine(m) }}</span>
+              <span v-if="m.email && memberDisplayLine(m) !== m.email" class="memberSecondary mono">{{ m.email }}</span>
               <span class="roleTag">{{ m.role === 'owner' ? '家长' : '成员' }}</span>
               <span v-if="m.user_id === appState.session?.user?.id" class="meTag">我</span>
             </li>
@@ -430,6 +497,15 @@ h3 { margin: 0 0 8px; font-size: 16px; }
 .sumTitle { cursor: pointer; font-weight: 900; }
 .sep { margin: 0 6px; opacity: .6; }
 
+.nickPanel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(0,0,0,0.12);
+}
+.nickTitle { margin: 0 0 6px; font-size: 16px; font-weight: 900; }
+.nickRow { margin-top: 8px; align-items: stretch; }
+.nickRow .input { flex: 1; min-width: 0; }
+
 .memberBlock { margin-top: 4px; }
 .memberList {
   list-style: none;
@@ -448,6 +524,18 @@ h3 { margin: 0 0 8px; font-size: 16px; }
   border-radius: 10px;
   border: 1px solid rgba(0,0,0,0.08);
   background: rgba(255,255,255,0.5);
+}
+.memberPrimary {
+  font-weight: 800;
+  font-size: 16px;
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+}
+.memberSecondary {
+  font-size: 12px;
+  opacity: 0.72;
+  max-width: 100%;
 }
 .roleTag {
   font-size: 12px;

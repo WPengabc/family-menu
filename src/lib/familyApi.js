@@ -76,6 +76,75 @@ export async function getSession() {
   return data.session
 }
 
+/** 当前用户在 profiles 中的展示字段（无表或未配置时返回 null） */
+export async function getMyProfile() {
+  const session = await getSession()
+  if (!session?.user?.id) return null
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('display_name, email')
+    .eq('id', session.user.id)
+    .maybeSingle()
+  if (error) {
+    const msg = String(error.message ?? '')
+    if (msg.includes('profiles') && (msg.includes('does not exist') || msg.includes('schema cache'))) return null
+    throw error
+  }
+  return data ?? null
+}
+
+/** 更新昵称（家庭成员列表优先显示）；空字符串表示清除昵称 */
+export async function updateMyDisplayName(displayName) {
+  const session = await getSession()
+  if (!session?.user?.id) throw new Error('未登录')
+  const trimmed = (displayName ?? '').trim().slice(0, 32)
+  const display_name = trimmed.length ? trimmed : null
+  const email = session.user.email ?? null
+  const now = new Date().toISOString()
+  const { error } = await supabase.from('profiles').upsert(
+    { id: session.user.id, email, display_name, updated_at: now },
+    { onConflict: 'id' },
+  )
+  if (error) throw error
+}
+
+/** 把当前登录用户的邮箱写入 profiles；保留已有 display_name，避免覆盖昵称 */
+export async function syncProfileFromSession() {
+  const session = await getSession()
+  if (!session?.user?.id) return
+  const id = session.user.id
+  const email = session.user.email ?? null
+  const now = new Date().toISOString()
+
+  const { data: row, error: selErr } = await supabase
+    .from('profiles')
+    .select('display_name')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (selErr) {
+    const msg = String(selErr.message ?? '')
+    if (msg.includes('profiles') && (msg.includes('does not exist') || msg.includes('schema cache'))) return
+    console.warn('[profiles] syncProfileFromSession:', selErr.message ?? selErr)
+    return
+  }
+
+  const { error } = await supabase.from('profiles').upsert(
+    {
+      id,
+      email,
+      display_name: row?.display_name ?? null,
+      updated_at: now,
+    },
+    { onConflict: 'id' },
+  )
+  if (error) {
+    const msg = String(error.message ?? '')
+    if (msg.includes('profiles') && (msg.includes('does not exist') || msg.includes('schema cache'))) return
+    console.warn('[profiles] syncProfileFromSession:', error.message ?? error)
+  }
+}
+
 export async function createFamily({ name }) {
   // 简化：客户端生成 6 位邀请码，冲突则重试（家庭规模下够用）
   // 更严谨的做法：用 RPC/Edge Function 在服务端生成并原子创建。
@@ -130,7 +199,9 @@ export async function joinFamilyByInviteCode(inviteCode) {
   return fam
 }
 
-/** 列出当前家庭全部成员（需 DB：family_members 的 SELECT 允许 is_member(family_id)） */
+/**
+ * 列出当前家庭成员；合并 profiles 的邮箱/昵称（需执行 migrations 里 profiles 的 SQL）。
+ */
 export async function listFamilyMembers(familyId) {
   if (!familyId) return []
   const { data, error } = await supabase
@@ -139,7 +210,27 @@ export async function listFamilyMembers(familyId) {
     .eq('family_id', familyId)
     .order('created_at', { ascending: true })
   if (error) throw error
-  return data ?? []
+  const rows = data ?? []
+  const ids = [...new Set(rows.map((r) => r.user_id).filter(Boolean))]
+  if (ids.length === 0) return []
+
+  const { data: profs, error: pe } = await supabase
+    .from('profiles')
+    .select('id, email, display_name')
+    .in('id', ids)
+
+  const byId = {}
+  if (!pe && profs) {
+    for (const p of profs) byId[p.id] = p
+  }
+
+  return rows.map((r) => ({
+    user_id: r.user_id,
+    role: r.role,
+    created_at: r.created_at,
+    email: byId[r.user_id]?.email ?? null,
+    display_name: byId[r.user_id]?.display_name ?? null,
+  }))
 }
 
 export async function restoreFamilyFromServer() {
