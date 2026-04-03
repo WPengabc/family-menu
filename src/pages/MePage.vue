@@ -2,7 +2,15 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { appState, refreshAuth, refreshFamily, runSync, showError, showOk } from '../lib/appState'
-import { createFamily, getFamilyInfo, joinFamilyByInviteCode, refreshFamilyInfo, signInWithOtp, signOut } from '../lib/familyApi'
+import {
+  createFamily,
+  getFamilyInfo,
+  joinFamilyByInviteCode,
+  listFamilyMembers,
+  refreshFamilyInfo,
+  signInWithOtp,
+  signOut,
+} from '../lib/familyApi'
 import {
   addCategoryLocal,
   deleteCategoryLocal,
@@ -22,6 +30,8 @@ const inviteCode = ref('')
 const categories = ref([])
 const dishes = ref([])
 const familyInfo = ref(null)
+const familyMembers = ref([])
+const membersLoading = ref(false)
 
 const showEditor = ref(false)
 const editingDishId = ref(null)
@@ -30,6 +40,38 @@ const authed = computed(() => !!appState.session)
 const inFamily = computed(() => !!appState.familyId)
 const dishCount = computed(() => dishes.value.length)
 const inviteCodeText = computed(() => familyInfo.value?.invite_code ?? '')
+
+function shortUserId(uid) {
+  const s = String(uid ?? '')
+  if (s.length <= 10) return s
+  return `${s.slice(0, 8)}…`
+}
+
+async function loadFamilyMembers() {
+  if (!appState.familyId || !authed.value) {
+    familyMembers.value = []
+    return
+  }
+  membersLoading.value = true
+  try {
+    familyMembers.value = await listFamilyMembers(appState.familyId)
+  } catch (e) {
+    showError(e)
+    familyMembers.value = []
+  } finally {
+    membersLoading.value = false
+  }
+}
+
+async function doRefreshInviteCode() {
+  try {
+    const x = await refreshFamilyInfo()
+    familyInfo.value = x
+    if (x?.invite_code) showOk('已加载邀请码')
+  } catch (e) {
+    showError(e)
+  }
+}
 
 function openAdd() {
   editingDishId.value = null
@@ -66,6 +108,7 @@ async function doCreateFamily() {
     const fam = await createFamily({ name: familyName.value })
     await refreshFamily()
     familyInfo.value = await refreshFamilyInfo()
+    await loadFamilyMembers()
     showOk(`已创建家庭：邀请码 ${fam.invite_code}`)
   } catch (e) {
     showError(e)
@@ -77,6 +120,7 @@ async function doJoinFamily() {
     const fam = await joinFamilyByInviteCode(inviteCode.value)
     await refreshFamily()
     familyInfo.value = await refreshFamilyInfo()
+    await loadFamilyMembers()
     showOk(`已加入家庭：${fam.name}`)
   } catch (e) {
     showError(e)
@@ -156,6 +200,7 @@ onMounted(async () => {
       showError(e)
     }
   }
+  if (authed.value && appState.familyId) await loadFamilyMembers()
 })
 </script>
 
@@ -239,10 +284,28 @@ onMounted(async () => {
         </div>
         <div v-else class="hint">
           邀请码未加载
-          <button class="btn sm" style="margin-left:10px;" @click="refreshFamilyInfo().then((x)=>{familyInfo=x; if(x?.invite_code) showOk('已加载邀请码')})">
-            刷新邀请码
-          </button>
+          <button class="btn sm" style="margin-left:10px;" @click="doRefreshInviteCode">刷新邀请码</button>
         </div>
+
+        <div class="memberBlock">
+          <div class="row" style="margin-top:12px;">
+            <h3 style="margin:0;">家庭成员</h3>
+            <button class="btn sm" :disabled="membersLoading" @click="loadFamilyMembers">刷新成员</button>
+          </div>
+          <div v-if="membersLoading" class="hint">加载中…</div>
+          <div v-else-if="familyMembers.length === 0" class="hint">
+            暂无数据。若已加入家庭仍为空，请在 Supabase 为 <span class="mono">family_members</span> 开启「同家庭可读」的 SELECT 策略（见仓库
+            <span class="mono">supabase/migrations/</span> 下 SQL）。
+          </div>
+          <ul v-else class="memberList">
+            <li v-for="m in familyMembers" :key="m.user_id">
+              <span class="mono">{{ shortUserId(m.user_id) }}</span>
+              <span class="roleTag">{{ m.role === 'owner' ? '家长' : '成员' }}</span>
+              <span v-if="m.user_id === appState.session?.user?.id" class="meTag">我</span>
+            </li>
+          </ul>
+        </div>
+
         <button class="btn primary" :disabled="appState.syncing" @click="runSync('手动同步')">手动同步</button>
         <div class="hint">现在开始：添加菜品/生成订单/完成订单会自动同步到数据库。</div>
       </div>
@@ -366,5 +429,39 @@ h3 { margin: 0 0 8px; font-size: 16px; }
 }
 .sumTitle { cursor: pointer; font-weight: 900; }
 .sep { margin: 0 6px; opacity: .6; }
+
+.memberBlock { margin-top: 4px; }
+.memberList {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.memberList li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.5);
+}
+.roleTag {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.06);
+  font-weight: 700;
+}
+.meTag {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255,177,90,0.35);
+  font-weight: 800;
+}
 </style>
 

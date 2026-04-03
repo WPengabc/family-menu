@@ -130,6 +130,18 @@ export async function joinFamilyByInviteCode(inviteCode) {
   return fam
 }
 
+/** 列出当前家庭全部成员（需 DB：family_members 的 SELECT 允许 is_member(family_id)） */
+export async function listFamilyMembers(familyId) {
+  if (!familyId) return []
+  const { data, error } = await supabase
+    .from('family_members')
+    .select('user_id, role, created_at')
+    .eq('family_id', familyId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
 export async function restoreFamilyFromServer() {
   const session = await getSession()
   if (!session) return null
