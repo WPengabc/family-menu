@@ -6,6 +6,8 @@ import { cloudEnabled, getSignedDishImageUrl } from '../lib/cloudRepo'
 const props = defineProps({
   imagePath: { type: String, default: null },
   className: { type: String, default: 'thumb' },
+  alt: { type: String, default: '菜品图片' },
+  fallbackTitle: { type: String, default: '暂无图片' },
 })
 
 const src = ref('')
@@ -40,7 +42,7 @@ onMounted(resolve)
 </script>
 
 <template>
-  <img v-if="src" :class="className" :src="src" alt="" />
-  <div v-else :class="[className, 'ph']"></div>
+  <img v-if="src" :class="className" :src="src" :alt="alt" />
+  <div v-else :class="[className, 'ph']" :title="fallbackTitle"></div>
 </template>
 

@@ -1,7 +1,7 @@
 import { deleteOne, getOne, listAll, putOne, upsertMany } from './localDb'
 import { genId, nowIso, simplifyIngredients } from './utils'
 import { getMyProfile, getSession, queueOp } from './familyApi'
-import { queuePushOnlySync, scheduleBackgroundSync } from './appState'
+import { markSyncQueued, queuePushOnlySync, scheduleBackgroundSync } from './appState'
 
 /** 订单类操作：先立刻推云端，再防抖做一次全量同步（合并他人改动） */
 const ORDER_CLOUD_OPS = new Set(['upsert_order', 'delete_order'])
@@ -81,6 +81,11 @@ export async function listOrders() {
   })
 }
 
+export async function listHistoryOrders() {
+  const all = await listOrders()
+  return all.filter((o) => o.status === '已完成')
+}
+
 async function resolvePlacedBy() {
   const session = await getSession()
   if (!session?.user?.id) {
@@ -142,7 +147,8 @@ export async function deleteOrderLocal(orderId) {
 // ====== 联网互通：把本地操作入队（离线也可），同步模块会 flush ======
 export async function enqueueCloudOp({ familyId, opType, entityId, payload }) {
   if (!familyId) return
-  await queueOp({ familyId, opType, entityId, payload })
+  const queued = await queueOp({ familyId, opType, entityId, payload })
+  if (queued) markSyncQueued()
 
   // 后台防抖同步：合并短时间内的多次编辑，成功不打扰，失败仍由 appState 提示
   try {

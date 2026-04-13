@@ -42,6 +42,7 @@ export async function oplogListPending(limit = 50) {
 }
 
 export async function oplogMarkSynced(ids) {
+  if (!ids?.length) return
   const db = await getDb()
   const tx = db.transaction('oplog', 'readwrite')
   for (const id of ids) {
@@ -49,6 +50,36 @@ export async function oplogMarkSynced(ids) {
     if (row) await tx.store.put({ ...row, status: 'synced', syncedAt: Date.now() })
   }
   await tx.done
+}
+
+export async function oplogMarkFailed(id, errorMessage) {
+  if (!id) return
+  const db = await getDb()
+  const row = await db.get('oplog', id)
+  if (!row) return
+  await db.put('oplog', {
+    ...row,
+    status: 'pending',
+    lastError: String(errorMessage ?? '同步失败'),
+    lastTriedAt: Date.now(),
+    retryCount: Number(row.retryCount ?? 0) + 1,
+  })
+}
+
+export async function oplogDeleteOldSynced({ olderThanMs = 3 * 24 * 60 * 60 * 1000, limit = 200 } = {}) {
+  const db = await getDb()
+  const all = await db.getAll('oplog')
+  const now = Date.now()
+  const candidates = all
+    .filter((x) => x.status === 'synced' && (x.syncedAt ?? 0) > 0 && now - x.syncedAt > olderThanMs)
+    .sort((a, b) => (a.syncedAt ?? 0) - (b.syncedAt ?? 0))
+    .slice(0, Math.max(0, limit))
+  if (candidates.length === 0) return 0
+
+  const tx = db.transaction('oplog', 'readwrite')
+  for (const row of candidates) await tx.store.delete(row.id)
+  await tx.done
+  return candidates.length
 }
 
 export async function upsertMany(storeName, rows) {

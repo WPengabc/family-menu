@@ -8,6 +8,9 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       includeAssets: ['favicon.ico', 'mask-icon.svg', 'vite.svg'],
       manifest: {
         name: '家庭点菜',
@@ -20,29 +23,6 @@ export default defineConfig({
         scope: '/',
         icons: [
           { src: '/vite.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' },
-        ],
-      },
-      workbox: {
-        navigateFallback: '/index.html',
-        runtimeCaching: [
-          {
-            urlPattern: ({ request }) => request.destination === 'document',
-            handler: 'NetworkFirst',
-            options: { cacheName: 'pages', networkTimeoutSeconds: 3 },
-          },
-          {
-            urlPattern: ({ request }) => ['style', 'script', 'worker'].includes(request.destination),
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'assets' },
-          },
-          {
-            urlPattern: ({ request }) => request.destination === 'image',
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'images',
-              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 },
-            },
-          },
         ],
       },
     }),

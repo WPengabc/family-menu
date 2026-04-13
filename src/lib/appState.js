@@ -14,6 +14,8 @@ export const appState = reactive({
   lastSyncPullCount: 0,
   toast: '',
   toastType: 'ok', // ok | err
+  syncPhase: 'idle', // idle | queued | syncing | done | error
+  queuedOps: 0,
 })
 
 function toast(msg, type = 'ok') {
@@ -91,7 +93,9 @@ export function queuePushOnlySync(familyId) {
 }
 
 let backgroundDebounceTimer = null
-const BACKGROUND_SYNC_DEBOUNCE_MS = 380
+const BACKGROUND_SYNC_DEBOUNCE_MS = 1200
+const RECENT_REALTIME_WINDOW_MS = 2200
+let lastRealtimePullAt = 0
 
 /**
  * 编辑/下单后的后台同步：防抖合并多次操作，成功不弹窗（失败仍提示）
@@ -102,28 +106,40 @@ export function scheduleBackgroundSync(familyId) {
   backgroundDebounceTimer = setTimeout(() => {
     backgroundDebounceTimer = null
     if (!appState.familyId || appState.familyId !== familyId) return
-    void queueSyncJob({ verboseSuccess: false })
+    const justPulledByRealtime = Date.now() - lastRealtimePullAt < RECENT_REALTIME_WINDOW_MS
+    // Realtime 已拉到最新时，避免立刻再做一次全量 pull。
+    void queueSyncJob({ verboseSuccess: false, skipPull: justPulledByRealtime })
   }, BACKGROUND_SYNC_DEBOUNCE_MS)
 }
 
 async function runSyncInternal({ verboseSuccess, reason, skipPull = false }) {
   if (!appState.familyId || !appState.session) return null
   try {
+    appState.syncPhase = 'syncing'
     appState.syncing = true
     const r = await syncNow(appState.familyId, { skipPull })
     appState.lastSyncPullCount = r && typeof r.pulled === 'number' ? r.pulled : 0
+    appState.queuedOps = Math.max(0, appState.queuedOps - Number(r?.pushed ?? 0))
+    appState.syncPhase = appState.queuedOps > 0 ? 'queued' : 'done'
     if (verboseSuccess) {
       if (r.offline) {
         toast('当前离线：已保存在本机，联网后将自动同步', 'ok')
       } else if (!r.cloudDisabled) {
-        toast(`同步完成：上传 ${r.pushed} / 拉取 ${r.pulled}${reason ? `（${reason}）` : ''}`, 'ok')
+        const suffix = r.failed ? `，失败 ${r.failed}` : ''
+        toast(`同步完成：上传 ${r.pushed} / 拉取 ${r.pulled}${suffix}${reason ? `（${reason}）` : ''}`, r.failed ? 'err' : 'ok')
       }
+    }
+    if (appState.syncPhase === 'done') {
+      setTimeout(() => {
+        if (!appState.syncing && appState.syncPhase === 'done') appState.syncPhase = 'idle'
+      }, 1200)
     }
     return r
   } catch (e) {
     const msg = e?.message || e?.error_description || '同步失败'
     const extra = [e?.code, e?.details, e?.hint].filter(Boolean).join(' / ')
     toast(extra ? `${msg}（${extra}）` : msg, 'err')
+    appState.syncPhase = 'error'
     throw e
   } finally {
     appState.syncing = false
@@ -176,5 +192,14 @@ export function showError(e) {
 
 export function showOk(msg) {
   toast(msg, 'ok')
+}
+
+export function markSyncQueued() {
+  appState.queuedOps += 1
+  if (!appState.syncing) appState.syncPhase = 'queued'
+}
+
+export function markRealtimePull() {
+  lastRealtimePullAt = Date.now()
 }
 

@@ -91,6 +91,16 @@ async function doRefreshInviteCode() {
   }
 }
 
+async function copyInviteCode() {
+  if (!inviteCodeText.value) return
+  try {
+    await navigator.clipboard.writeText(inviteCodeText.value)
+    showOk('已复制邀请码')
+  } catch {
+    showError(new Error('复制失败：请检查浏览器权限或手动复制邀请码'))
+  }
+}
+
 function openAdd() {
   editingDishId.value = null
   showEditor.value = true
@@ -312,7 +322,7 @@ watch(
 
     <div v-else class="dishList">
       <div v-for="d in dishes" :key="d.id" class="dishItem">
-        <DishThumb :imagePath="d.image_path" className="thumb" />
+        <DishThumb :imagePath="d.image_path" :alt="`${d.name} 图片`" :fallbackTitle="`${d.name} 暂无图片`" className="thumb" />
         <div class="info">
           <div class="name">{{ d.name }}</div>
           <div class="sub">{{ (d.ingredients_text || '').slice(0, 28) }}<span v-if="(d.ingredients_text||'').length>28">…</span></div>
@@ -388,7 +398,7 @@ watch(
           <div class="k">邀请码</div>
           <div class="v mono">
             {{ inviteCodeText }}
-            <button class="btn sm" style="margin-left:10px;" @click="navigator.clipboard?.writeText(inviteCodeText); showOk('已复制邀请码')">
+            <button class="btn sm" style="margin-left:10px;" @click="copyInviteCode">
               复制
             </button>
           </div>

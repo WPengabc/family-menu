@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { addCategoryLocal, getCategories, getDish, upsertDishLocal } from '../lib/dataService'
 import { appState, showError, showOk } from '../lib/appState'
 import { enqueueCloudOp } from '../lib/dataService'
@@ -27,6 +27,7 @@ const cameraInput = ref(null)
 const pickedJpegBlob = ref(null)
 const uploading = ref(false)
 const uploadingText = ref('')
+const modalRef = ref(null)
 
 function withTimeout(promise, ms, message) {
   let t
@@ -40,6 +41,10 @@ const canSave = computed(() => name.value.trim().length > 0)
 
 function close() {
   emit('update:modelValue', false)
+}
+
+function onEsc(e) {
+  if (e.key === 'Escape' && props.modelValue) close()
 }
 
 async function loadCategories() {
@@ -115,6 +120,7 @@ async function quickAddCategory() {
   if (!n?.trim()) return
   try {
     const c = await addCategoryLocal(n)
+    await enqueueCloudOp({ familyId: appState.familyId, opType: 'upsert_category', entityId: c.id, payload: { row: c } })
     await loadCategories()
     categoryId.value = c.id
     showOk('已新增分类（本机）')
@@ -193,20 +199,27 @@ watch(
     categoryId.value = null
     await loadCategories()
     await loadDish()
+    await nextTick()
+    modalRef.value?.focus()
   }
 )
 
 onMounted(async () => {
+  window.addEventListener('keydown', onEsc)
   if (props.modelValue) {
     await loadCategories()
     await loadDish()
   }
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onEsc)
+})
  </script>
 
 <template>
   <div v-if="modelValue" class="mask" @click.self="close">
-    <div class="modal">
+    <div ref="modalRef" class="modal" role="dialog" aria-modal="true" aria-label="菜品编辑弹窗" tabindex="-1">
       <div class="modalTop">
         <div class="title">{{ props.dishId ? '编辑菜品' : '添加新菜' }}</div>
         <button class="btn sm" @click="close">关闭</button>

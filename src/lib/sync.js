@@ -1,5 +1,12 @@
 import { getOrCreateDeviceId, getSession } from './familyApi'
-import { oplogListPending, oplogMarkSynced, listAll, replaceFamilyPullData } from './localDb'
+import {
+  oplogDeleteOldSynced,
+  oplogListPending,
+  oplogMarkFailed,
+  oplogMarkSynced,
+  listAll,
+  replaceFamilyPullData,
+} from './localDb'
 import { cloudEnabled, deleteCategory, deleteOrder, fetchAll, upsertCategory, upsertDish, upsertOrder } from './cloudRepo'
 import { supabase } from './supabase'
 
@@ -29,12 +36,17 @@ export async function syncNow(familyId, options = {}) {
   // 如果云端这个家庭还没有数据，把本机的演示数据/已编辑数据先灌进去
   await ensureCloudSeed({ familyId })
 
-  const pushed = await pushPendingOps({ familyId, deviceId })
+  const pushResult = await pushPendingOps({ familyId, deviceId })
   let pulled = 0
   if (!skipPull) {
     pulled = await pullRemoteState({ familyId })
   }
-  return { pushed, pulled }
+  return {
+    pushed: pushResult.pushed,
+    skipped: pushResult.skipped,
+    failed: pushResult.failed,
+    pulled,
+  }
 }
 
 async function ensureCloudSeed({ familyId }) {
@@ -78,16 +90,41 @@ async function ensureCloudSeed({ familyId }) {
 
 async function pushPendingOps({ familyId, deviceId }) {
   const pending = await oplogListPending(50)
-  if (pending.length === 0) return 0
+  if (pending.length === 0) return { pushed: 0, failed: 0, skipped: 0 }
+
+  const syncedIds = []
+  let pushed = 0
+  let failed = 0
+  let skipped = 0
+  let fatalError = null
 
   for (const op of pending) {
     // 同步只处理当前设备产生的变更
-    if (op.deviceId && op.deviceId !== deviceId) continue
-    await applyOpToCloud({ familyId, op })
+    if (op.deviceId && op.deviceId !== deviceId) {
+      skipped += 1
+      continue
+    }
+    try {
+      await applyOpToCloud({ familyId, op })
+      pushed += 1
+      syncedIds.push(op.id)
+    } catch (e) {
+      failed += 1
+      await oplogMarkFailed(op.id, classifySyncError(e))
+      if (isFatalSyncError(e)) {
+        fatalError = e
+        break
+      }
+    }
   }
 
-  await oplogMarkSynced(pending.map((x) => x.id))
-  return pending.length
+  await oplogMarkSynced(syncedIds)
+  // 定期清理旧的已同步操作，避免 oplog 长期线性增长。
+  if (syncedIds.length > 0) {
+    await oplogDeleteOldSynced({ olderThanMs: 3 * 24 * 60 * 60 * 1000, limit: 120 })
+  }
+  if (fatalError) throw fatalError
+  return { pushed, failed, skipped }
 }
 
 async function pullRemoteState({ familyId }) {
@@ -123,5 +160,38 @@ async function applyOpToCloud({ familyId, op }) {
   if (t === 'delete_order') return await deleteOrder({ familyId, id: p.id })
 
   // 未识别操作：忽略，避免阻断家庭使用
+}
+
+function isFatalSyncError(e) {
+  const code = String(e?.code ?? '')
+  const status = Number(e?.status ?? e?.statusCode ?? 0)
+  const msg = String(e?.message ?? '')
+  return (
+    status === 401 ||
+    status === 403 ||
+    code === '401' ||
+    code === '403' ||
+    code === 'PGRST301' ||
+    msg.includes('JWT') ||
+    msg.includes('not authenticated') ||
+    msg.includes('permission denied') ||
+    msg.includes('row-level security')
+  )
+}
+
+function classifySyncError(e) {
+  const msg = String(e?.message ?? '同步失败')
+  if (isFatalSyncError(e)) return `鉴权失败：${msg}`
+  const code = String(e?.code ?? '')
+  const status = Number(e?.status ?? e?.statusCode ?? 0)
+  if (status >= 500 || code.startsWith('5')) return `服务暂时不可用：${msg}`
+  if (status === 408 || msg.includes('timeout') || msg.includes('network')) return `网络异常：${msg}`
+  if (code === '23505' || code === '409') return `数据冲突：${msg}`
+  return `业务错误：${msg}`
+}
+
+export const __syncInternals = {
+  isFatalSyncError,
+  classifySyncError,
 }
 

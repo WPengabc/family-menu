@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { addCategoryLocal, enqueueCloudOp, getCategories, getDish, upsertDishLocal } from '../lib/dataService'
 import { appState, showError, showOk } from '../lib/appState'
+import { blobToDataUrl, compressImageFileToJpeg, dataUrlToBlob } from '../lib/photo'
+import { cloudEnabled, getSignedDishImageUrl, uploadDishImage } from '../lib/cloudRepo'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,7 +16,9 @@ const name = ref('')
 const ingredients = ref('主料：；辅料：')
 const categoryId = ref(null)
 const categories = ref([])
-const imageDataUrl = ref(null)
+const imagePath = ref(null)
+const imagePreviewSrc = ref(null)
+const pickedJpegBlob = ref(null)
 
 const canSave = computed(() => name.value.trim().length > 0)
 
@@ -28,7 +32,29 @@ async function load() {
     name.value = d.name ?? ''
     ingredients.value = d.ingredients_text ?? '主料：；辅料：'
     categoryId.value = d.category_id ?? categoryId.value
-    imageDataUrl.value = d.image_path?.startsWith('data:') ? d.image_path : null
+    imagePath.value = d.image_path ?? null
+    await refreshPreview()
+  }
+}
+
+async function refreshPreview() {
+  if (!imagePath.value) {
+    imagePreviewSrc.value = null
+    return
+  }
+  const p = String(imagePath.value)
+  if (p.startsWith('data:') || p.startsWith('http')) {
+    imagePreviewSrc.value = p
+    return
+  }
+  if (!cloudEnabled() || !appState.session) {
+    imagePreviewSrc.value = null
+    return
+  }
+  try {
+    imagePreviewSrc.value = await getSignedDishImageUrl(p)
+  } catch {
+    imagePreviewSrc.value = null
   }
 }
 
@@ -39,11 +65,17 @@ function insertTemplate() {
 function pickImage(e) {
   const file = e.target.files?.[0]
   if (!file) return
-  const reader = new FileReader()
-  reader.onload = () => {
-    imageDataUrl.value = reader.result
-  }
-  reader.readAsDataURL(file)
+  ;(async () => {
+    try {
+      const blob = await compressImageFileToJpeg(file, { maxW: 1920, quality: 0.88 })
+      pickedJpegBlob.value = blob
+      imagePath.value = await blobToDataUrl(blob)
+      imagePreviewSrc.value = imagePath.value
+    } catch (err) {
+      pickedJpegBlob.value = null
+      showError(err)
+    }
+  })()
 }
 
 async function quickAddCategory() {
@@ -51,6 +83,7 @@ async function quickAddCategory() {
   if (!n?.trim()) return
   try {
     const c = await addCategoryLocal(n)
+    await enqueueCloudOp({ familyId: appState.familyId, opType: 'upsert_category', entityId: c.id, payload: { row: c } })
     categories.value = await getCategories()
     categoryId.value = c.id
     showOk('已新增分类（本机）')
@@ -62,13 +95,26 @@ async function quickAddCategory() {
 async function save() {
   if (!canSave.value) return
   try {
-    const row = await upsertDishLocal({
+    const baseRow = await upsertDishLocal({
       id: isEdit.value ? dishId.value : null,
       name: name.value,
       category_id: categoryId.value,
       ingredients_text: ingredients.value,
-      image_path: imageDataUrl.value ?? null,
+      image_path: imagePath.value ?? null,
     })
+    let row = baseRow
+
+    if (cloudEnabled() && appState.session && appState.familyId && navigator.onLine && imagePath.value) {
+      const isDataUrl = String(imagePath.value).startsWith('data:image/')
+      if (isDataUrl) {
+        const blob = pickedJpegBlob.value ?? dataUrlToBlob(imagePath.value)
+        const path = await uploadDishImage({ familyId: appState.familyId, dishId: baseRow.id, blob })
+        row = await upsertDishLocal({ ...baseRow, image_path: path })
+        imagePath.value = path
+        await refreshPreview()
+      }
+    }
+
     await enqueueCloudOp({ familyId: appState.familyId, opType: 'upsert_dish', entityId: row.id, payload: { row } })
     showOk(isEdit.value ? '已保存修改（本机）' : '已添加到我的菜品库（本机）')
     router.replace(`/dish/${row.id}`)
@@ -92,10 +138,10 @@ onMounted(load)
     <div class="field">
       <label>菜品图片（相册/拍照）</label>
       <input class="input" type="file" accept="image/*" capture="environment" @change="pickImage" />
-      <div v-if="imageDataUrl" class="imgWrap">
-        <img :src="imageDataUrl" alt="preview" />
+      <div v-if="imagePreviewSrc" class="imgWrap">
+        <img :src="imagePreviewSrc" alt="菜品预览图" />
       </div>
-      <div class="hint">提示：演示版图片先保存在本机；如需家庭互通，后续接 Supabase Storage。</div>
+      <div class="hint">提示：会先压缩图片；已登录家庭并在线时会自动上传，便于多设备互通。</div>
     </div>
 
     <div class="field">
@@ -115,7 +161,7 @@ onMounted(load)
     <div class="actions">
       <button class="btn primary" :disabled="!canSave" @click="save">保存</button>
       <button class="btn" @click="$router.back()">返回</button>
-      <button class="btn" @click="$router.push('/')">回首页</button>
+      <button class="btn" @click="$router.push('/order')">回点菜</button>
     </div>
   </section>
 </template>

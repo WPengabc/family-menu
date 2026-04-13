@@ -107,17 +107,29 @@ export async function uploadDishImage({ familyId, dishId, blob }) {
 }
 
 const signedUrlCache = new Map()
+const SIGNED_URL_CACHE_MAX = 180
+
+function setSignedUrlCache(path, value) {
+  if (signedUrlCache.has(path)) signedUrlCache.delete(path)
+  signedUrlCache.set(path, value)
+  if (signedUrlCache.size <= SIGNED_URL_CACHE_MAX) return
+  const oldestKey = signedUrlCache.keys().next().value
+  if (oldestKey) signedUrlCache.delete(oldestKey)
+}
 
 export async function getSignedDishImageUrl(path, ttlSeconds = 60 * 60) {
   if (!path) return ''
   const now = Date.now()
   const cached = signedUrlCache.get(path)
-  if (cached && cached.expiresAt > now + 10_000) return cached.url
+  if (cached && cached.expiresAt > now + 10_000) {
+    setSignedUrlCache(path, cached)
+    return cached.url
+  }
 
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, ttlSeconds)
   if (error) throw error
   const url = data?.signedUrl ?? ''
-  signedUrlCache.set(path, { url, expiresAt: now + ttlSeconds * 1000 })
+  setSignedUrlCache(path, { url, expiresAt: now + ttlSeconds * 1000 })
   return url
 }
 

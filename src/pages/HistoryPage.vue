@@ -2,7 +2,7 @@
 defineOptions({ name: 'HistoryPage' })
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { deleteOrderLocal, enqueueCloudOp, listOrders } from '../lib/dataService'
+import { deleteOrderLocal, enqueueCloudOp, listHistoryOrders } from '../lib/dataService'
 import { appState, showError, showOk } from '../lib/appState'
 import { familySyncBus } from '../lib/familySyncBus'
 import { formatTime } from '../lib/utils'
@@ -23,7 +23,7 @@ const filtered = computed(() => {
 })
 
 async function refresh() {
-  orders.value = await listOrders()
+  orders.value = await listHistoryOrders()
 }
 
 async function del(orderId) {
@@ -56,9 +56,9 @@ watch(
       <button class="btn sm" @click="$router.back()">返回</button>
     </div>
     <div class="filters">
-      <button class="pill" :class="{ on: filterDays === 7 }" @click="filterDays = 7">近7天</button>
-      <button class="pill" :class="{ on: filterDays === 30 }" @click="filterDays = 30">近30天</button>
-      <button class="pill" :class="{ on: filterDays === 0 }" @click="filterDays = 0">全部</button>
+      <button class="pill" :aria-pressed="filterDays === 7" :class="{ on: filterDays === 7 }" @click="filterDays = 7">近7天</button>
+      <button class="pill" :aria-pressed="filterDays === 30" :class="{ on: filterDays === 30 }" @click="filterDays = 30">近30天</button>
+      <button class="pill" :aria-pressed="filterDays === 0" :class="{ on: filterDays === 0 }" @click="filterDays = 0">全部</button>
     </div>
   </section>
 

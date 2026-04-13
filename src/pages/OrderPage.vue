@@ -106,7 +106,7 @@ watch(
               :checked="selected.has(d.id)"
               @change="toggleDish(d.id, $event.target.checked)"
             />
-            <DishThumb :imagePath="d.image_path" className="thumb" />
+            <DishThumb :imagePath="d.image_path" :alt="`${d.name} 图片`" :fallbackTitle="`${d.name} 暂无图片`" className="thumb" />
             <div class="info">
               <div class="name">{{ d.name }}</div>
               <div class="sub">
@@ -208,8 +208,8 @@ h2 { margin: 0; font-size: 18px; }
 .btn.sm { padding: 10px 12px; font-size: 14px; }
 .btn:disabled { opacity: .55; }
 .bottomBar {
-  position: fixed; left: 0; right: 0; bottom: 56px;
-  padding: 10px 16px;
+  position: fixed; left: 0; right: 0; bottom: calc(56px + env(safe-area-inset-bottom));
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
   background: linear-gradient(to top, rgba(243,235,221,0.96), rgba(243,235,221,0.65));
 }
 .wide { width: 100%; }

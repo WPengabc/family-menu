@@ -6,6 +6,7 @@ import {
   fetchOrdersForFamily,
 } from './cloudRepo'
 import { familySyncBus } from './familySyncBus'
+import { markRealtimePull } from './appState'
 import { replaceTableRows } from './localDb'
 
 let channel = null
@@ -36,6 +37,7 @@ async function pullOrdersSafe(fid) {
   try {
     const rows = await fetchOrdersForFamily(fid)
     await replaceTableRows('orders', rows)
+    markRealtimePull()
     familySyncBus.ordersRev++
   } catch (e) {
     console.warn('[realtime] orders', e?.message ?? e)
@@ -46,6 +48,7 @@ async function pullDishesSafe(fid) {
   try {
     const rows = await fetchDishesForFamily(fid)
     await replaceTableRows('dishes', rows)
+    markRealtimePull()
     familySyncBus.dishesRev++
   } catch (e) {
     console.warn('[realtime] dishes', e?.message ?? e)
@@ -56,6 +59,7 @@ async function pullCatsSafe(fid) {
   try {
     const rows = await fetchCategoriesForFamily(fid)
     await replaceTableRows('categories', rows)
+    markRealtimePull()
     familySyncBus.categoriesRev++
   } catch (e) {
     console.warn('[realtime] categories', e?.message ?? e)

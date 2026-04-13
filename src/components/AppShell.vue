@@ -12,7 +12,17 @@ const tabs = [
   { name: 'me', label: '我的', path: '/me' },
 ]
 
-const active = computed(() => tabs.find((t) => route.path === t.path)?.name ?? '')
+const active = computed(() => {
+  if (route.path === '/me' || route.path.startsWith('/me/')) return 'me'
+  return tabs.find((t) => route.path === t.path)?.name ?? ''
+})
+
+const syncText = computed(() => {
+  if (appState.syncPhase === 'syncing') return '同步中...'
+  if (appState.syncPhase === 'queued' && appState.queuedOps > 0) return `待同步 ${appState.queuedOps}`
+  if (appState.syncPhase === 'error') return '同步异常'
+  return ''
+})
 
 function go(path) {
   router.push(path)
@@ -26,13 +36,19 @@ function go(path) {
         <div class="name">家庭点菜</div>
         <div class="rightStatus">
           <span class="badge" :class="{ ok: appState.online }">{{ appState.online ? '在线' : '离线可用' }}</span>
-          <span v-if="appState.syncing" class="badge">同步中...</span>
+          <span v-if="syncText" class="badge" :class="{ err: appState.syncPhase === 'error' }">{{ syncText }}</span>
         </div>
       </div>
     </header>
 
     <main class="content">
-      <div v-if="appState.toast" class="toast" :class="{ err: appState.toastType === 'err' }">
+      <div
+        v-if="appState.toast"
+        class="toast"
+        :class="{ err: appState.toastType === 'err' }"
+        role="status"
+        aria-live="polite"
+      >
         {{ appState.toast }}
       </div>
       <slot />
@@ -44,6 +60,7 @@ function go(path) {
         :key="t.name"
         class="tab"
         :class="{ on: active === t.name }"
+        :aria-current="active === t.name ? 'page' : undefined"
         @click="go(t.path)"
       >
         {{ t.label }}
@@ -74,6 +91,7 @@ function go(path) {
   background: rgba(0,0,0,0.06);
 }
 .badge.ok { background: rgba(46, 125, 50, 0.14); }
+.badge.err { background: rgba(211, 47, 47, 0.14); color: #872121; }
 .content { padding: 14px 16px 88px; max-width: 900px; margin: 0 auto; }
 .toast {
   margin-bottom: 10px; padding: 10px 12px; border-radius: 12px;
@@ -86,7 +104,7 @@ function go(path) {
   display: grid; grid-template-columns: repeat(3, 1fr);
   background: rgba(255,255,255,0.92);
   border-top: 1px solid rgba(0,0,0,0.08);
-  padding: 8px;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
 }
 .tab {
   border: none; background: transparent;
