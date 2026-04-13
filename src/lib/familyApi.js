@@ -63,6 +63,19 @@ export async function signInWithOtp(email) {
   if (error) throw error
 }
 
+export async function verifyEmailOtp({ email, code }) {
+  const normalizedEmail = String(email ?? '').trim()
+  const token = String(code ?? '').trim()
+  if (!normalizedEmail) throw new Error('请先输入邮箱')
+  if (!token) throw new Error('请输入验证码')
+  const { error } = await supabase.auth.verifyOtp({
+    email: normalizedEmail,
+    token,
+    type: 'email',
+  })
+  if (error) throw error
+}
+
 export async function signOut() {
   const { error } = await supabase.auth.signOut()
   if (error) throw error

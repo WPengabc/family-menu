@@ -11,7 +11,7 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.js',
-      includeAssets: ['favicon.ico', 'mask-icon.svg', 'vite.svg'],
+      includeAssets: ['favicon.ico', 'mask-icon.svg', 'apple-touch-icon.png', 'pwa-192.png', 'pwa-512.png'],
       manifest: {
         name: '家庭点菜',
         short_name: '点菜',
@@ -22,7 +22,9 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         icons: [
-          { src: '/vite.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' },
+          { src: '/pwa-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/pwa-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
     }),

@@ -14,6 +14,7 @@ import {
   signInWithOtp,
   signOut,
   updateMyDisplayName,
+  verifyEmailOtp,
 } from '../lib/familyApi'
 import {
   addCategoryLocal,
@@ -30,6 +31,8 @@ import DishThumb from '../components/DishThumb.vue'
 const router = useRouter()
 const route = useRoute()
 const email = ref('')
+const otpCode = ref('')
+const otpSent = ref(false)
 const familyName = ref('我的家庭')
 const inviteCode = ref('')
 const categories = ref([])
@@ -114,7 +117,21 @@ function openEdit(id) {
 async function doSignIn() {
   try {
     await signInWithOtp(email.value.trim())
-    showOk('已发送登录链接到邮箱，请在手机邮箱里打开完成登录')
+    otpSent.value = true
+    showOk('验证码已发送，请在当前页面输入邮箱验证码完成登录')
+  } catch (e) {
+    showError(e)
+  }
+}
+
+async function doVerifyOtp() {
+  try {
+    await verifyEmailOtp({ email: email.value, code: otpCode.value })
+    await refreshAuth()
+    await refreshFamily()
+    otpCode.value = ''
+    otpSent.value = false
+    showOk('登录成功')
   } catch (e) {
     showError(e)
   }
@@ -346,11 +363,23 @@ watch(
     </div>
 
     <div v-if="!authed" class="panel" style="margin-top:10px;">
-      <div class="hint">输入邮箱后会收到登录链接；在手机邮箱里点开即可登录。</div>
-      <div class="row">
+      <div class="hint">输入邮箱后会收到验证码；可直接在主屏幕应用里输入验证码登录。</div>
+      <div class="row authRow">
         <input v-model="email" class="input" placeholder="邮箱，例如 xxx@qq.com" inputmode="email" />
-        <button class="btn primary" @click="doSignIn">发送登录链接</button>
+        <button class="btn primary" @click="doSignIn">发送验证码</button>
       </div>
+      <div class="row authRow" style="margin-top:10px;">
+        <input
+          v-model="otpCode"
+          class="input"
+          placeholder="输入邮箱验证码"
+          inputmode="numeric"
+          maxlength="8"
+          @keydown.enter.prevent="doVerifyOtp"
+        />
+        <button class="btn" :disabled="!otpCode.trim() || !email.trim()" @click="doVerifyOtp">验证码登录</button>
+      </div>
+      <div v-if="otpSent" class="hint">如果没收到，请检查垃圾邮箱后重新发送。</div>
     </div>
 
     <div v-else class="panel" style="margin-top:10px;">
@@ -477,6 +506,7 @@ h2 { margin: 0 0 8px; font-size: 18px; }
 h3 { margin: 0 0 8px; font-size: 16px; }
 .hint { margin-top: 6px; opacity: .78; line-height: 1.55; }
 .row { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+.authRow .input { flex: 1; min-width: 0; }
 .grid2 { display:grid; grid-template-columns: 1fr; gap: 10px; }
 @media (min-width: 720px) { .grid2 { grid-template-columns: 1fr 1fr; } }
 .panel {

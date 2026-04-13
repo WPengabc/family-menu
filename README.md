@@ -33,8 +33,7 @@ npm run dev
 - Environment Variables：填 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`
 
 ## PWA 图标说明
-当前仓库为了避免提交二进制文件，PWA 图标先用 `vite.svg` 占位。
-上线前建议你自己放入 `public/pwa-192.png` 与 `public/pwa-512.png`，并在 `vite.config.js` / `public/manifest.webmanifest` 里改回 PNG 图标配置。
+当前项目已使用 `public/pwa-192.png`、`public/pwa-512.png` 和 `public/apple-touch-icon.png` 作为主屏幕图标资源。
 
 # Vue 3 + Vite
 
