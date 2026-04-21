@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { showToast, showFailToast } from 'vant'
 import { getFamilyId, getSession, restoreFamilyFromServer, syncProfileFromSession } from './familyApi'
 import { syncFamilyRealtimeSubscription } from './realtimeFamily'
 import { syncNow } from './sync'
@@ -12,19 +13,17 @@ export const appState = reactive({
   syncing: false,
   /** 最近一次完整同步拉下的行数（用于「我的」是否整页重载） */
   lastSyncPullCount: 0,
-  toast: '',
-  toastType: 'ok', // ok | err
   syncPhase: 'idle', // idle | queued | syncing | done | error
   queuedOps: 0,
 })
 
 function toast(msg, type = 'ok') {
-  appState.toast = msg
-  appState.toastType = type
   if (!msg) return
-  setTimeout(() => {
-    if (appState.toast === msg) appState.toast = ''
-  }, 3500)
+  if (type === 'err') {
+    showFailToast({ message: msg, duration: 3000 })
+  } else {
+    showToast({ message: msg, duration: 2400 })
+  }
 }
 
 export async function initApp() {

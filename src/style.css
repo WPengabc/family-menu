@@ -33,3 +33,66 @@ button, input, textarea, select {
   outline-offset: 2px;
 }
 
+/* ---------- Vant 主题：对齐家庭点菜的米黄 + 暖橙基调 ---------- */
+:root {
+  --brand-cream: #f3ebdd;
+  --brand-orange: #ffb15a;
+  --brand-orange-strong: #f59232;
+  --brand-ink: #2b2b2b;
+
+  /* Vant 全局色 */
+  --van-primary-color: var(--brand-orange-strong);
+  --van-success-color: #2e7d32;
+  --van-danger-color: #d33b3b;
+  --van-warning-color: #e6a23c;
+
+  /* 圆角 / 字体 */
+  --van-radius-md: 12px;
+  --van-radius-lg: 16px;
+  --van-font-size-md: 15px;
+  --van-font-bold: 700;
+
+  /* NavBar */
+  --van-nav-bar-background: rgba(243, 235, 221, 0.92);
+  --van-nav-bar-title-text-color: var(--brand-ink);
+  --van-nav-bar-title-font-size: 17px;
+  --van-nav-bar-arrow-size: 18px;
+  --van-nav-bar-icon-color: var(--brand-ink);
+
+  /* Tabbar */
+  --van-tabbar-background: rgba(255, 255, 255, 0.96);
+  --van-tabbar-item-active-color: var(--brand-orange-strong);
+  --van-tabbar-item-active-background: transparent;
+  --van-tabbar-item-text-color: #8a8473;
+  --van-tabbar-item-font-size: 12px;
+  --van-tabbar-height: 56px;
+
+  /* Sidebar */
+  --van-sidebar-background: transparent;
+  --van-sidebar-selected-background: rgba(255, 177, 90, 0.22);
+  --van-sidebar-selected-border-color: var(--brand-orange-strong);
+  --van-sidebar-selected-font-weight: 800;
+  --van-sidebar-font-size: 14px;
+  --van-sidebar-padding: 14px 10px;
+
+  /* Card */
+  --van-card-background: rgba(255, 255, 255, 0.75);
+  --van-card-thumb-size: 72px;
+  --van-card-thumb-border-radius: 12px;
+
+  /* SubmitBar */
+  --van-submit-bar-background: rgba(243, 235, 221, 0.98);
+
+  /* Button */
+  --van-button-primary-background: var(--brand-orange-strong);
+  --van-button-primary-border-color: var(--brand-orange-strong);
+  --van-button-warning-background: var(--brand-orange);
+  --van-button-warning-border-color: var(--brand-orange);
+  --van-button-border-radius: 12px;
+  --van-button-round-border-radius: 999px;
+
+  /* Tag */
+  --van-tag-success-color: #2e7d32;
+  --van-tag-danger-color: #b52b2b;
+}
+

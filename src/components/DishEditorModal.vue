@@ -1,8 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { addCategoryLocal, getCategories, getDish, upsertDishLocal } from '../lib/dataService'
+import { addCategoryLocal, getCategories, getDish, upsertDishLocal, enqueueCloudOp } from '../lib/dataService'
 import { appState, showError, showOk } from '../lib/appState'
-import { enqueueCloudOp } from '../lib/dataService'
 import { simplifyIngredients } from '../lib/utils'
 import { blobToDataUrl, compressImageFileToJpeg, dataUrlToBlob } from '../lib/photo'
 import { cloudEnabled, getSignedDishImageUrl, uploadDishImage } from '../lib/cloudRepo'
@@ -11,23 +10,34 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   dishId: { type: String, default: null },
 })
-
 const emit = defineEmits(['update:modelValue', 'saved'])
 
 const name = ref('')
 const ingredients = ref('主料：；辅料：')
 const categories = ref([])
 const categoryId = ref(null)
-// 存储：本地 dataUrl 或云端 storage path
 const imagePath = ref(null)
-// 展示：用于 <img src> 的可访问 URL（dataUrl 或 signedUrl）
-const imagePreviewSrc = ref(null)
-const albumInput = ref(null)
-const cameraInput = ref(null)
+const fileList = ref([])
 const pickedJpegBlob = ref(null)
 const uploading = ref(false)
 const uploadingText = ref('')
-const modalRef = ref(null)
+
+const showCategoryPicker = ref(false)
+const showAddCategory = ref(false)
+const newCategoryName = ref('')
+
+const canSave = computed(() => name.value.trim().length > 0)
+
+const categoryLabel = computed(() => {
+  const c = categories.value.find((x) => x.id === categoryId.value)
+  return c?.name ?? '请选择分类'
+})
+
+const categoryColumns = computed(() =>
+  categories.value.map((c) => ({ text: c.name, value: c.id })),
+)
+
+const simplifiedTip = computed(() => simplifyIngredients(ingredients.value))
 
 function withTimeout(promise, ms, message) {
   let t
@@ -36,8 +46,6 @@ function withTimeout(promise, ms, message) {
   })
   return Promise.race([promise, timeout]).finally(() => clearTimeout(t))
 }
-
-const canSave = computed(() => name.value.trim().length > 0)
 
 function close() {
   emit('update:modelValue', false)
@@ -60,69 +68,86 @@ async function loadDish() {
   ingredients.value = d.ingredients_text ?? '主料：；辅料：'
   categoryId.value = d.category_id ?? categoryId.value
   imagePath.value = d.image_path ?? null
-  await refreshPreview()
+  await syncFileListFromImagePath()
 }
 
-async function refreshPreview() {
+async function syncFileListFromImagePath() {
   if (!imagePath.value) {
-    imagePreviewSrc.value = null
+    fileList.value = []
     return
   }
   const p = String(imagePath.value)
   if (p.startsWith('data:') || p.startsWith('http')) {
-    imagePreviewSrc.value = p
+    fileList.value = [{ url: p, isImage: true }]
     return
   }
-  // storage path -> signed url（需要登录）
   if (!cloudEnabled() || !appState.session) {
-    imagePreviewSrc.value = null
+    fileList.value = []
     return
   }
   try {
-    imagePreviewSrc.value = await getSignedDishImageUrl(p)
+    const url = await getSignedDishImageUrl(p)
+    fileList.value = [{ url, isImage: true }]
   } catch {
-    imagePreviewSrc.value = null
+    fileList.value = []
   }
 }
 
-function insertTemplate() {
-  if (!ingredients.value.trim()) ingredients.value = '主料：；辅料：'
-}
-
-function onPicked(e) {
-  const file = e.target.files?.[0]
+async function onAfterRead(item) {
+  const file = item?.file
   if (!file) return
-  ;(async () => {
-    try {
-      // 压缩成 jpeg（更清晰的参数），既减小本地存储也减小后续上云
-      // 视觉清晰优先：长边 1920 + 更高质量
-      const blob = await compressImageFileToJpeg(file, { maxW: 1920, quality: 0.88 })
-      pickedJpegBlob.value = blob
-      imagePath.value = await blobToDataUrl(blob)
-      imagePreviewSrc.value = imagePath.value
-    } catch (err) {
-      pickedJpegBlob.value = null
-      showError(err)
-    }
-  })()
+  try {
+    item.status = 'uploading'
+    item.message = '压缩中...'
+    const blob = await compressImageFileToJpeg(file, { maxW: 1920, quality: 0.88 })
+    pickedJpegBlob.value = blob
+    const dataUrl = await blobToDataUrl(blob)
+    imagePath.value = dataUrl
+    item.url = dataUrl
+    item.status = 'done'
+    item.message = ''
+  } catch (err) {
+    item.status = 'failed'
+    item.message = '处理失败'
+    pickedJpegBlob.value = null
+    showError(err)
+  }
 }
 
-function pickAlbum() {
-  albumInput.value?.click()
+function onDeleteImage() {
+  imagePath.value = null
+  pickedJpegBlob.value = null
+  fileList.value = []
 }
 
-function pickCamera() {
-  cameraInput.value?.click()
+function insertTemplate() {
+  if (!ingredients.value.trim() || ingredients.value.trim() === '') {
+    ingredients.value = '主料：；辅料：'
+  } else if (!ingredients.value.includes('主料') && !ingredients.value.includes('辅料')) {
+    ingredients.value = `主料：${ingredients.value}；辅料：`
+  }
 }
 
-async function quickAddCategory() {
-  const n = prompt('输入新分类名称：')
-  if (!n?.trim()) return
+function onCategoryConfirm({ selectedOptions }) {
+  const opt = selectedOptions?.[0]
+  if (opt) categoryId.value = opt.value
+  showCategoryPicker.value = false
+}
+
+function openAddCategory() {
+  newCategoryName.value = ''
+  showAddCategory.value = true
+}
+
+async function confirmAddCategory() {
+  const n = newCategoryName.value.trim()
+  if (!n) return
   try {
     const c = await addCategoryLocal(n)
     await enqueueCloudOp({ familyId: appState.familyId, opType: 'upsert_category', entityId: c.id, payload: { row: c } })
     await loadCategories()
     categoryId.value = c.id
+    showAddCategory.value = false
     showOk('已新增分类（本机）')
   } catch (e) {
     showError(e)
@@ -145,9 +170,7 @@ async function save() {
 
     let finalRow = baseRow
 
-    // 已登录 + 已加入家庭 + 在线：把图片上传到 Storage，并把 image_path 改成云端路径
     if (cloudEnabled() && appState.session && appState.familyId && navigator.onLine && imagePath.value) {
-      // 只有 dataUrl 才需要上传；演示 svg dataUrl 也能上传，但不必要，先跳过
       const isDataUrl = String(imagePath.value).startsWith('data:image/')
       if (isDataUrl) {
         const blob = pickedJpegBlob.value ?? dataUrlToBlob(imagePath.value)
@@ -155,19 +178,16 @@ async function save() {
         const path = await withTimeout(
           uploadDishImage({ familyId: appState.familyId, dishId: baseRow.id, blob }),
           30000,
-          '上传图片超时（请检查 Storage 权限/网络）'
+          '上传图片超时（请检查 Storage 权限/网络）',
         )
         finalRow = await upsertDishLocal({ ...baseRow, image_path: path })
         imagePath.value = path
-        await refreshPreview()
+        await syncFileListFromImagePath()
       }
     }
 
-    const row = await upsertDishLocal({
-      ...finalRow,
-    })
+    const row = await upsertDishLocal({ ...finalRow })
 
-    // 可选：若已加入家庭并开启 Supabase，则把变更入队同步
     uploadingText.value = '同步中...'
     await enqueueCloudOp({
       familyId: appState.familyId,
@@ -191,17 +211,16 @@ watch(
   () => props.modelValue,
   async (v) => {
     if (!v) return
-    // 打开弹窗时重置/加载，保证演示体验稳定
     name.value = ''
     ingredients.value = '主料：；辅料：'
     imagePath.value = null
-    imagePreviewSrc.value = null
+    fileList.value = []
+    pickedJpegBlob.value = null
     categoryId.value = null
     await loadCategories()
     await loadDish()
     await nextTick()
-    modalRef.value?.focus()
-  }
+  },
 )
 
 onMounted(async () => {
@@ -215,147 +234,203 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onEsc)
 })
- </script>
+</script>
 
 <template>
-  <div v-if="modelValue" class="mask" @click.self="close">
-    <div ref="modalRef" class="modal" role="dialog" aria-modal="true" aria-label="菜品编辑弹窗" tabindex="-1">
-      <div class="modalTop">
-        <div class="title">{{ props.dishId ? '编辑菜品' : '添加新菜' }}</div>
-        <button class="btn sm" @click="close">关闭</button>
-      </div>
-
-      <div class="field">
-        <label>菜名（必填）</label>
-        <input v-model="name" class="input" placeholder="例如：番茄炒蛋" />
-      </div>
-
-      <div class="field">
-        <label>菜品图片（相册/拍照）</label>
-        <div class="imgActions">
-          <button class="btn sm" type="button" @click="pickAlbum">从相册选择</button>
-          <button class="btn sm" type="button" @click="pickCamera">拍照上传</button>
-        </div>
-
-        <input ref="albumInput" class="hiddenFile" type="file" accept="image/*" @change="onPicked" />
-        <input
-          ref="cameraInput"
-          class="hiddenFile"
-          type="file"
-          accept="image/*"
-          capture="environment"
-          @change="onPicked"
-        />
-
-        <div v-if="imagePreviewSrc" class="imgWrap">
-          <img :src="imagePreviewSrc" alt="preview" />
-        </div>
-        <div v-else class="imgWrap ph">（可选，不填也能演示）</div>
-      </div>
-
-      <div class="field">
-        <label>所需食材（主料/辅料，多行）</label>
-        <textarea v-model="ingredients" class="textarea" rows="4" placeholder="主料：...；辅料：..." />
-        <button class="btn sm" @click="insertTemplate">插入模板</button>
-        <div class="mini">{{ simplifyIngredients(ingredients) }}</div>
-      </div>
-
-      <div class="field">
-        <label>归属分类</label>
-        <select v-model="categoryId" class="input">
-          <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </select>
-        <button class="btn sm" @click="quickAddCategory">+ 新建分类</button>
-      </div>
-
-      <div class="actions">
-        <button class="btn primary" :disabled="!canSave || uploading" @click="save">
-          {{ uploading ? (uploadingText || '处理中...') : (props.dishId ? '保存修改' : '保存新菜') }}
-        </button>
-      </div>
+  <van-popup
+    :show="modelValue"
+    position="bottom"
+    round
+    closeable
+    close-on-click-overlay
+    safe-area-inset-bottom
+    class="editorPopup"
+    :style="{ maxHeight: '92vh' }"
+    @update:show="(v) => emit('update:modelValue', v)"
+  >
+    <div class="popHeader">
+      <div class="popTitle">{{ props.dishId ? '编辑菜品' : '添加新菜' }}</div>
     </div>
-  </div>
+
+    <div class="popBody">
+      <van-form @submit="save">
+        <van-cell-group inset>
+          <van-field
+            v-model="name"
+            label="菜名"
+            placeholder="例如：番茄炒蛋"
+            maxlength="40"
+            required
+            :rules="[{ required: true, message: '请输入菜名' }]"
+          />
+
+          <van-field
+            label="菜品图片"
+            :border="false"
+          >
+            <template #input>
+              <van-uploader
+                v-model="fileList"
+                :max-count="1"
+                accept="image/*"
+                :preview-size="110"
+                :after-read="onAfterRead"
+                @delete="onDeleteImage"
+              />
+            </template>
+          </van-field>
+
+          <van-field
+            v-model="ingredients"
+            label="食材"
+            type="textarea"
+            rows="3"
+            autosize
+            placeholder="主料：...；辅料：..."
+            maxlength="300"
+            show-word-limit
+          >
+            <template #button>
+              <van-button size="mini" plain round @click="insertTemplate">插入模板</van-button>
+            </template>
+          </van-field>
+
+          <van-field
+            :model-value="simplifiedTip"
+            label="简化"
+            readonly
+            input-align="left"
+            placeholder="（保存时用于订单快照）"
+          />
+
+          <van-field
+            :model-value="categoryLabel"
+            label="分类"
+            is-link
+            readonly
+            placeholder="选择分类"
+            @click="showCategoryPicker = true"
+          >
+            <template #button>
+              <van-button size="mini" plain round icon="plus" @click.stop="openAddCategory">
+                新建
+              </van-button>
+            </template>
+          </van-field>
+        </van-cell-group>
+
+        <div class="submitRow">
+          <van-button
+            type="warning"
+            block
+            round
+            :loading="uploading"
+            :loading-text="uploadingText || '处理中...'"
+            :disabled="!canSave"
+            native-type="submit"
+          >
+            {{ props.dishId ? '保存修改' : '保存新菜' }}
+          </van-button>
+        </div>
+      </van-form>
+    </div>
+
+    <!-- 分类选择器 -->
+    <van-popup
+      v-model:show="showCategoryPicker"
+      position="bottom"
+      round
+      safe-area-inset-bottom
+      teleport="body"
+    >
+      <van-picker
+        :columns="categoryColumns"
+        :model-value="categoryId ? [categoryId] : []"
+        @confirm="onCategoryConfirm"
+        @cancel="showCategoryPicker = false"
+      />
+    </van-popup>
+
+    <!-- 新建分类 -->
+    <van-popup
+      v-model:show="showAddCategory"
+      round
+      safe-area-inset-bottom
+      teleport="body"
+      :style="{ width: '86%', maxWidth: '360px', padding: '18px 18px 14px' }"
+    >
+      <div class="addCatTitle">新建分类</div>
+      <van-field
+        v-model="newCategoryName"
+        placeholder="例如：川菜 / 早餐"
+        maxlength="12"
+        autofocus
+        @keyup.enter="confirmAddCategory"
+      />
+      <div class="addCatActions">
+        <van-button plain round block size="normal" @click="showAddCategory = false">取消</van-button>
+        <van-button
+          type="warning"
+          round
+          block
+          size="normal"
+          :disabled="!newCategoryName.trim()"
+          @click="confirmAddCategory"
+        >
+          创建
+        </van-button>
+      </div>
+    </van-popup>
+  </van-popup>
 </template>
 
 <style scoped>
-.mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.35);
-  z-index: 200;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 14px;
+.editorPopup {
+  --van-cell-group-inset-padding: 0 12px;
 }
-.modal {
-  width: 100%;
-  max-width: 640px;
-  background: rgba(255,255,255,0.98);
-  border-radius: 18px;
-  border: 1px solid rgba(0,0,0,0.08);
-  padding: 14px;
-  overflow: auto;
-  max-height: 82vh;
+
+.popHeader {
+  padding: 18px 18px 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
 }
-.modalTop { display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px; }
-.title { font-size: 18px; font-weight: 900; }
-.field { margin-bottom: 12px; }
-label { display:block; font-weight: 900; margin-bottom: 6px; }
-.input, .textarea {
-  width: 100%;
-  padding: 12px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(0,0,0,0.14);
-  background: rgba(255,255,255,0.9);
-  font-size: 16px;
-  outline: none;
-}
-.textarea { resize: vertical; }
-.imgWrap {
-  margin-top: 10px;
-  width: 100%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-.imgWrap img {
-  width: 140px;
-  height: 140px;
-  border-radius: 14px;
-  border: 1px solid rgba(0,0,0,0.08);
-  object-fit: cover;
-}
-.imgWrap.ph {
-  height: 140px;
-  background: rgba(0,0,0,0.04);
-  border-radius: 14px;
-  border: 1px dashed rgba(0,0,0,0.14);
-  opacity: .8;
-  font-weight: 800;
-  padding: 10px;
-}
-.imgActions { display:flex; gap:10px; flex-wrap:wrap; margin-bottom: 8px; }
-.mini { margin-top: 8px; opacity: .7; font-size: 13px; }
-.actions { display:flex; justify-content:flex-end; }
-.hiddenFile {
-  position: absolute;
-  left: -9999px;
-  top: -9999px;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-.btn {
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: none;
-  background: rgba(0,0,0,0.06);
-  color: #2b2b2b;
-  font-size: 16px;
+
+.popTitle {
+  font-size: 18px;
   font-weight: 900;
+  color: var(--brand-ink);
 }
-.btn.primary { background:#ffb15a; }
-.btn.sm { padding: 10px 12px; font-size: 14px; }
-.btn:disabled { opacity: .55; }
+
+.popBody {
+  padding: 12px 0 16px;
+  overflow-y: auto;
+  max-height: calc(92vh - 60px);
+}
+
+.submitRow {
+  padding: 14px 16px 4px;
+}
+
+.addCatTitle {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--brand-ink);
+  margin-bottom: 10px;
+}
+
+.addCatActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+:deep(.van-cell-group--inset) {
+  margin: 0 12px 10px;
+}
+
+:deep(.van-field__label) {
+  width: 64px;
+  font-weight: 700;
+  color: var(--brand-ink);
+}
 </style>

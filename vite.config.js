@@ -1,11 +1,21 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import Components from 'unplugin-vue-components/vite'
+import { VantResolver } from '@vant/auto-import-resolver'
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    host: true, // 绑定 0.0.0.0，方便手机在同一局域网访问
+    port: 5173,
+  },
   plugins: [
     vue(),
+    Components({
+      resolvers: [VantResolver()],
+      dts: false,
+    }),
     VitePWA({
       registerType: 'autoUpdate',
       strategies: 'injectManifest',

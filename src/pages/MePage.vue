@@ -2,6 +2,7 @@
 defineOptions({ name: 'MePage' })
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { showConfirmDialog, showToast } from 'vant'
 import { appState, refreshAuth, refreshFamily, runSync, showError, showOk } from '../lib/appState'
 import { familySyncBus } from '../lib/familySyncBus'
 import {
@@ -46,10 +47,49 @@ const nicknameSaving = ref(false)
 const showEditor = ref(false)
 const editingDishId = ref(null)
 
+const familyCollapse = ref(['family'])
+const categoryCollapse = ref([])
+
+const textPromptConfig = ref({
+  show: false,
+  title: '',
+  placeholder: '',
+  value: '',
+  maxLength: 32,
+  confirmText: '确认',
+  onConfirm: null,
+})
+
 const authed = computed(() => !!appState.session)
 const inFamily = computed(() => !!appState.familyId)
 const dishCount = computed(() => dishes.value.length)
 const inviteCodeText = computed(() => familyInfo.value?.invite_code ?? '')
+
+const profilePrimary = computed(() => {
+  if (!authed.value) return '未登录'
+  const nick = nicknameInput.value.trim()
+  if (nick) return nick
+  return appState.session?.user?.email ?? '已登录'
+})
+
+const profileSecondary = computed(() => {
+  if (!authed.value) return '数据仅保存在本机'
+  const email = appState.session?.user?.email
+  if (email && email !== profilePrimary.value) return email
+  return inFamily.value ? '家庭已同步' : '仅本机（未加入家庭）'
+})
+
+const profileInitial = computed(() => {
+  const src = profilePrimary.value
+  if (!src || src === '未登录') return ''
+  const ch = src.trim().charAt(0)
+  return /[a-zA-Z]/.test(ch) ? ch.toUpperCase() : ch
+})
+
+function dishCategoryName(dish) {
+  const c = categories.value.find((x) => x.id === dish.category_id)
+  return c?.name ?? '未分类'
+}
 
 function shortUserId(uid) {
   const s = String(uid ?? '')
@@ -57,7 +97,6 @@ function shortUserId(uid) {
   return `${s.slice(0, 8)}…`
 }
 
-/** 昵称优先，其次 profiles 邮箱，再次当前会话邮箱（本人），最后短 ID */
 function memberDisplayLine(m) {
   const name = (m.display_name ?? '').trim()
   if (name) return name
@@ -66,6 +105,33 @@ function memberDisplayLine(m) {
     return appState.session.user.email
   }
   return shortUserId(m.user_id)
+}
+
+function openTextPrompt({ title, placeholder, value = '', maxLength = 32, confirmText = '确认', onConfirm }) {
+  textPromptConfig.value = {
+    show: true,
+    title,
+    placeholder,
+    value,
+    maxLength,
+    confirmText,
+    onConfirm,
+  }
+}
+
+async function confirmTextPrompt() {
+  const cfg = textPromptConfig.value
+  const v = (cfg.value ?? '').trim()
+  if (!v) return
+  if (typeof cfg.onConfirm === 'function') {
+    try {
+      await cfg.onConfirm(v)
+    } finally {
+      textPromptConfig.value = { ...textPromptConfig.value, show: false }
+    }
+  } else {
+    textPromptConfig.value = { ...textPromptConfig.value, show: false }
+  }
 }
 
 async function loadFamilyMembers() {
@@ -98,7 +164,7 @@ async function copyInviteCode() {
   if (!inviteCodeText.value) return
   try {
     await navigator.clipboard.writeText(inviteCodeText.value)
-    showOk('已复制邀请码')
+    showToast({ message: '已复制邀请码', position: 'bottom' })
   } catch {
     showError(new Error('复制失败：请检查浏览器权限或手动复制邀请码'))
   }
@@ -165,6 +231,15 @@ async function saveNickname() {
 
 async function doSignOut() {
   try {
+    await showConfirmDialog({
+      title: '退出登录',
+      message: '确认退出当前账号？本地数据会保留。',
+      confirmButtonText: '退出',
+    })
+  } catch {
+    return
+  }
+  try {
     await signOut()
     await refreshAuth()
     await refreshFamily()
@@ -207,7 +282,6 @@ async function refreshDishes() {
   dishes.value = await getDishes({ categoryId: 'all' })
 }
 
-/** 从 IndexedDB 重拉菜品/分类/家庭展示数据（同步完成后或从其它 Tab 回到「我的」时用） */
 async function reloadMeLists() {
   await refreshCategories()
   await refreshDishes()
@@ -222,11 +296,20 @@ async function reloadMeLists() {
   if (authed.value && appState.familyId) await loadFamilyMembers()
 }
 
-async function delDish(id) {
-  if (!confirm('确认删除该菜品？')) return
+async function delDish(d) {
   try {
-    const row = await deleteDishLocal(id)
-    await enqueueCloudOp({ familyId: appState.familyId, opType: 'upsert_dish', entityId: id, payload: { row } })
+    await showConfirmDialog({
+      title: '删除菜品',
+      message: `确认删除「${d.name}」？`,
+      confirmButtonText: '删除',
+      confirmButtonColor: 'var(--van-danger-color)',
+    })
+  } catch {
+    return
+  }
+  try {
+    const row = await deleteDishLocal(d.id)
+    await enqueueCloudOp({ familyId: appState.familyId, opType: 'upsert_dish', entityId: d.id, payload: { row } })
     showOk('已删除（本机）')
     await refreshDishes()
   } catch (e) {
@@ -234,35 +317,57 @@ async function delDish(id) {
   }
 }
 
-async function addCategory() {
-  const n = prompt('输入新分类名称：')
-  if (!n?.trim()) return
-  try {
-    const row = await addCategoryLocal(n)
-    await enqueueCloudOp({ familyId: appState.familyId, opType: 'upsert_category', entityId: row.id, payload: { row } })
-    await refreshCategories()
-    showOk('已新增分类（本机）')
-  } catch (e) {
-    showError(e)
-  }
+function addCategory() {
+  openTextPrompt({
+    title: '新增分类',
+    placeholder: '例如：川菜 / 早餐',
+    confirmText: '创建',
+    maxLength: 12,
+    async onConfirm(name) {
+      try {
+        const row = await addCategoryLocal(name)
+        await enqueueCloudOp({ familyId: appState.familyId, opType: 'upsert_category', entityId: row.id, payload: { row } })
+        await refreshCategories()
+        showOk('已新增分类（本机）')
+      } catch (e) {
+        showError(e)
+      }
+    },
+  })
 }
 
-async function renameCategory(c) {
-  const n = prompt('输入新名称：', c.name)
-  if (!n?.trim()) return
-  try {
-    const row = await renameCategoryLocal(c.id, n)
-    await enqueueCloudOp({ familyId: appState.familyId, opType: 'upsert_category', entityId: row.id, payload: { row } })
-    await refreshCategories()
-    showOk('已重命名（本机）')
-  } catch (e) {
-    showError(e)
-  }
+function renameCategory(c) {
+  openTextPrompt({
+    title: '重命名分类',
+    placeholder: '请输入新名称',
+    value: c.name,
+    confirmText: '保存',
+    maxLength: 12,
+    async onConfirm(name) {
+      try {
+        const row = await renameCategoryLocal(c.id, name)
+        await enqueueCloudOp({ familyId: appState.familyId, opType: 'upsert_category', entityId: row.id, payload: { row } })
+        await refreshCategories()
+        showOk('已重命名（本机）')
+      } catch (e) {
+        showError(e)
+      }
+    },
+  })
 }
 
 async function delCategory(c) {
   if (c.is_default) return
-  if (!confirm(`确认删除分类“${c.name}”？该分类下菜品会迁移到“家常菜”。`)) return
+  try {
+    await showConfirmDialog({
+      title: '删除分类',
+      message: `删除分类「${c.name}」？该分类下菜品会迁移到"家常菜"。`,
+      confirmButtonText: '删除',
+      confirmButtonColor: 'var(--van-danger-color)',
+    })
+  } catch {
+    return
+  }
   try {
     await deleteCategoryLocal(c.id)
     await enqueueCloudOp({ familyId: appState.familyId, opType: 'delete_category', entityId: c.id, payload: { id: c.id } })
@@ -311,351 +416,738 @@ watch(
 </script>
 
 <template>
-  <section class="card authStrip" :class="{ off: !authed }">
-    <div class="authStripRow">
-      <span class="authDot" :class="{ on: authed }" aria-hidden="true" />
-      <template v-if="authed">
-        <span class="authMain">{{ appState.session?.user?.email }}</span>
-        <span v-if="nicknameInput.trim()" class="authNick">「{{ nicknameInput.trim() }}」</span>
-        <span class="sep">·</span>
-        <span>{{ inFamily ? '已加入家庭' : '未加入家庭' }}</span>
-      </template>
-      <template v-else>
-        <span class="authMain">未登录</span>
-        <span class="sep">·</span>
-        <span>数据仅在本机；下拉打开「家庭互通」可登录并同步</span>
-      </template>
+  <div class="wrap">
+    <!-- 顶部 Profile 卡 -->
+    <section class="hero" :class="{ heroAuthed: authed }">
+      <div class="heroAvatar" :class="{ heroAvatarAuthed: authed }">
+        <span v-if="profileInitial">{{ profileInitial }}</span>
+        <van-icon v-else name="user-o" />
+      </div>
+      <div class="heroInfo">
+        <div class="heroName" :class="{ muted: !authed }">{{ profilePrimary }}</div>
+        <div class="heroSub">{{ profileSecondary }}</div>
+      </div>
+      <van-tag
+        v-if="authed"
+        round
+        plain
+        size="medium"
+        :type="inFamily ? 'success' : 'warning'"
+      >
+        {{ inFamily ? '已加入家庭' : '未加入家庭' }}
+      </van-tag>
+    </section>
+
+    <!-- 菜品库 -->
+    <div class="section">
+      <div class="sectionHeader">
+        <h2>
+          菜品库
+          <span v-if="dishCount" class="countBadge">{{ dishCount }}</span>
+        </h2>
+        <van-button
+          size="small"
+          type="warning"
+          round
+          icon="plus"
+          @click="openAdd"
+        >
+          添加
+        </van-button>
+      </div>
+
+      <van-empty
+        v-if="dishes.length === 0"
+        image="search"
+        description="暂无菜品，点击右上角「添加」开始"
+      />
+
+      <van-cell-group v-else inset class="dishGroup">
+        <van-swipe-cell v-for="d in dishes" :key="d.id">
+          <van-cell center :border="false" class="dishCell" @click="openEdit(d.id)">
+            <template #icon>
+              <DishThumb
+                :imagePath="d.image_path"
+                :alt="`${d.name} 图片`"
+                :fallbackTitle="`${d.name} 暂无图片`"
+                className="thumb"
+              />
+            </template>
+            <template #title>
+              <div class="dishName">{{ d.name }}</div>
+            </template>
+            <template #label>
+              <div class="dishSub">{{ dishCategoryName(d) }}</div>
+            </template>
+            <template #right-icon>
+              <van-icon name="edit" class="editIcon" />
+            </template>
+          </van-cell>
+          <template #right>
+            <van-button
+              square
+              type="danger"
+              class="swipeBtn"
+              text="删除"
+              @click="delDish(d)"
+            />
+          </template>
+        </van-swipe-cell>
+      </van-cell-group>
     </div>
-  </section>
 
-  <section class="card">
-    <div class="row">
-      <h2>我的菜品库</h2>
-      <button class="btn primary" @click="openAdd">+ 添加新菜</button>
-    </div>
-    <div class="hint">共 {{ dishCount }} 道；离线也能操作，联网后可互通。</div>
+    <!-- 家庭互通 -->
+    <van-collapse v-model="familyCollapse" class="neatCollapse">
+      <van-collapse-item name="family">
+        <template #title>
+          <div class="neatCollapseTitle">
+            <van-icon name="friends-o" />
+            <span>家庭互通</span>
+            <van-tag
+              v-if="!authed"
+              round
+              plain
+              size="medium"
+              type="default"
+            >
+              未登录
+            </van-tag>
+            <van-tag
+              v-else
+              round
+              plain
+              size="medium"
+              :type="inFamily ? 'success' : 'warning'"
+            >
+              {{ inFamily ? '已共享' : '未加入' }}
+            </van-tag>
+          </div>
+        </template>
 
-    <div v-if="dishes.length === 0" class="empty">暂无菜品，点击“添加新菜”开始。</div>
-
-    <div v-else class="dishList">
-      <div v-for="d in dishes" :key="d.id" class="dishItem">
-        <DishThumb :imagePath="d.image_path" :alt="`${d.name} 图片`" :fallbackTitle="`${d.name} 暂无图片`" className="thumb" />
-        <div class="info">
-          <div class="name">{{ d.name }}</div>
-          <div class="sub">{{ (d.ingredients_text || '').slice(0, 28) }}<span v-if="(d.ingredients_text||'').length>28">…</span></div>
-        </div>
-        <div class="right">
-          <button class="btn sm" @click="openEdit(d.id)">编辑</button>
-          <button class="btn sm danger" @click="delDish(d.id)">删除</button>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <details class="card" :open="authed">
-    <summary class="sumTitle">家庭互通（登录后共享）</summary>
-    <div class="hint">
-      当前状态：
-      <b>{{ authed ? '已登录' : '未登录' }}</b>
-      <span v-if="authed">（{{ appState.session?.user?.email }}）</span>
-      <span class="sep">·</span>
-      <b>{{ inFamily ? '已加入家庭' : '未加入家庭' }}</b>
-    </div>
-
-    <div v-if="!authed" class="panel" style="margin-top:10px;">
-      <div class="hint">输入邮箱后会收到验证码；可直接在主屏幕应用里输入验证码登录。</div>
-      <div class="row authRow">
-        <input v-model="email" class="input" placeholder="邮箱，例如 xxx@qq.com" inputmode="email" />
-        <button class="btn primary" @click="doSignIn">发送验证码</button>
-      </div>
-      <div class="row authRow" style="margin-top:10px;">
-        <input
-          v-model="otpCode"
-          class="input"
-          placeholder="输入邮箱验证码"
-          inputmode="numeric"
-          maxlength="8"
-          @keydown.enter.prevent="doVerifyOtp"
-        />
-        <button class="btn" :disabled="!otpCode.trim() || !email.trim()" @click="doVerifyOtp">验证码登录</button>
-      </div>
-      <div v-if="otpSent" class="hint">如果没收到，请检查垃圾邮箱后重新发送。</div>
-    </div>
-
-    <div v-else class="panel" style="margin-top:10px;">
-      <div class="row">
-        <div class="hint">登录用户：<span class="mono">{{ appState.session?.user?.email }}</span></div>
-        <button class="btn sm" @click="doSignOut">退出</button>
-      </div>
-
-      <div class="nickPanel">
-        <h3 class="nickTitle">我的昵称</h3>
-        <div class="hint">家庭成员列表里会<strong>优先显示昵称</strong>；留空则显示邮箱。</div>
-        <div class="row nickRow">
-          <input
-            v-model="nicknameInput"
-            class="input"
-            placeholder="例如：老爸、小张"
-            maxlength="32"
-            autocomplete="nickname"
-          />
-          <button class="btn primary" :disabled="nicknameSaving" @click="saveNickname">保存昵称</button>
-        </div>
-      </div>
-
-      <div v-if="!inFamily" class="grid2" style="margin-top:10px;">
-        <div class="panel">
-          <h3>创建家庭</h3>
-          <div class="hint">第 1 位成员创建后，会生成邀请码分享给家人。</div>
-          <input v-model="familyName" class="input" placeholder="家庭名称（可选）" />
-          <button class="btn primary" @click="doCreateFamily">创建并生成邀请码</button>
-        </div>
-        <div class="panel">
-          <h3>加入家庭</h3>
-          <div class="hint">家人发你 6 位邀请码，输入即可加入同一家庭。</div>
-          <input v-model="inviteCode" class="input" placeholder="6位邀请码" inputmode="numeric" />
-          <button class="btn primary" @click="doJoinFamily">加入</button>
-        </div>
-      </div>
-
-      <div v-else class="panel" style="margin-top:10px;">
-        <div class="kv">
-          <div class="k">家庭ID</div>
-          <div class="v mono">{{ appState.familyId }}</div>
-        </div>
-        <div class="kv" v-if="inviteCodeText">
-          <div class="k">邀请码</div>
-          <div class="v mono">
-            {{ inviteCodeText }}
-            <button class="btn sm" style="margin-left:10px;" @click="copyInviteCode">
-              复制
-            </button>
+        <!-- 未登录 -->
+        <div v-if="!authed" class="familyBody">
+          <div class="bodyHint">输入邮箱后会收到验证码，输入验证码完成登录。</div>
+          <van-cell-group inset>
+            <van-field
+              v-model="email"
+              label="邮箱"
+              placeholder="xxx@qq.com"
+              type="email"
+              clearable
+            >
+              <template #button>
+                <van-button size="small" type="warning" round @click="doSignIn">
+                  发送验证码
+                </van-button>
+              </template>
+            </van-field>
+            <van-field
+              v-model="otpCode"
+              label="验证码"
+              placeholder="输入邮箱验证码"
+              type="digit"
+              maxlength="8"
+              @keyup.enter="doVerifyOtp"
+            >
+              <template #button>
+                <van-button
+                  size="small"
+                  round
+                  :disabled="!otpCode.trim() || !email.trim()"
+                  @click="doVerifyOtp"
+                >
+                  登录
+                </van-button>
+              </template>
+            </van-field>
+          </van-cell-group>
+          <div v-if="otpSent" class="bodyHint muted">
+            如果没收到，请检查垃圾邮箱后重新发送。
           </div>
         </div>
-        <div v-else class="hint">
-          邀请码未加载
-          <button class="btn sm" style="margin-left:10px;" @click="doRefreshInviteCode">刷新邀请码</button>
-        </div>
 
-        <div class="memberBlock">
-          <div class="row" style="margin-top:12px;">
-            <h3 style="margin:0;">家庭成员</h3>
-            <button class="btn sm" :disabled="membersLoading" @click="loadFamilyMembers">刷新成员</button>
-          </div>
-          <div v-if="membersLoading" class="hint">加载中…</div>
-          <div v-else-if="familyMembers.length === 0" class="hint">
-            暂无数据。若已加入家庭仍为空，请在 Supabase 为 <span class="mono">family_members</span> 开启「同家庭可读」的 SELECT 策略（见仓库
-            <span class="mono">supabase/migrations/</span> 下 SQL）。
-          </div>
-          <ul v-else class="memberList">
-            <li v-for="m in familyMembers" :key="m.user_id">
-              <span class="memberPrimary">{{ memberDisplayLine(m) }}</span>
-              <span v-if="m.email && memberDisplayLine(m) !== m.email" class="memberSecondary mono">{{ m.email }}</span>
-              <span class="roleTag">{{ m.role === 'owner' ? '家长' : '成员' }}</span>
-              <span v-if="m.user_id === appState.session?.user?.id" class="meTag">我</span>
-            </li>
-          </ul>
-        </div>
+        <!-- 已登录 -->
+        <div v-else class="familyBody">
+          <!-- 昵称 -->
+          <van-cell-group inset>
+            <van-field
+              v-model="nicknameInput"
+              label="我的昵称"
+              placeholder="例如：老爸、小张"
+              maxlength="32"
+            >
+              <template #button>
+                <van-button
+                  size="small"
+                  type="warning"
+                  round
+                  :loading="nicknameSaving"
+                  @click="saveNickname"
+                >
+                  保存
+                </van-button>
+              </template>
+            </van-field>
+          </van-cell-group>
+          <div class="bodyHint muted">留空则在家庭成员中显示邮箱。</div>
 
-        <button class="btn primary" :disabled="appState.syncing" @click="runSync('手动同步')">手动同步</button>
-        <div class="hint">现在开始：添加菜品/生成订单/完成订单会自动同步到数据库。</div>
+          <!-- 未加入家庭：创建 / 加入 -->
+          <template v-if="!inFamily">
+            <van-cell-group inset title="创建家庭">
+              <van-field
+                v-model="familyName"
+                label="家庭名称"
+                placeholder="家庭名称（可选）"
+              />
+              <div class="cellAction">
+                <van-button type="warning" round block @click="doCreateFamily">
+                  创建并生成邀请码
+                </van-button>
+              </div>
+            </van-cell-group>
+
+            <van-cell-group inset title="加入家庭">
+              <van-field
+                v-model="inviteCode"
+                label="邀请码"
+                placeholder="6位邀请码"
+                type="digit"
+                maxlength="6"
+              />
+              <div class="cellAction">
+                <van-button type="warning" plain round block @click="doJoinFamily">
+                  加入家庭
+                </van-button>
+              </div>
+            </van-cell-group>
+          </template>
+
+          <!-- 已加入家庭：家庭信息 + 成员 -->
+          <template v-else>
+            <van-cell-group inset>
+              <van-cell title="家庭ID">
+                <template #value>
+                  <span class="mono">{{ appState.familyId }}</span>
+                </template>
+              </van-cell>
+              <van-cell v-if="inviteCodeText" title="邀请码">
+                <template #value>
+                  <span class="mono inviteCode">{{ inviteCodeText }}</span>
+                </template>
+                <template #right-icon>
+                  <van-button size="mini" plain round icon="after-sort" @click="copyInviteCode">
+                    复制
+                  </van-button>
+                </template>
+              </van-cell>
+              <van-cell v-else>
+                <template #title>
+                  <span class="muted">邀请码未加载</span>
+                </template>
+                <template #right-icon>
+                  <van-button size="mini" plain round @click="doRefreshInviteCode">
+                    刷新
+                  </van-button>
+                </template>
+              </van-cell>
+            </van-cell-group>
+
+            <div class="memberSection">
+              <div class="sectionSubHeader">
+                <div class="subTitle">家庭成员</div>
+                <van-button size="mini" plain round :loading="membersLoading" @click="loadFamilyMembers">
+                  刷新
+                </van-button>
+              </div>
+              <div v-if="membersLoading" class="bodyHint muted">加载中…</div>
+              <div v-else-if="familyMembers.length === 0" class="bodyHint muted">
+                暂无数据。若已加入家庭仍为空，请在 Supabase 为 <span class="mono">family_members</span> 开启「同家庭可读」的 SELECT 策略。
+              </div>
+              <van-cell-group v-else inset>
+                <van-cell
+                  v-for="m in familyMembers"
+                  :key="m.user_id"
+                  center
+                  :border="true"
+                >
+                  <template #title>
+                    <div class="memberLine">
+                      <span class="memberPrimary">{{ memberDisplayLine(m) }}</span>
+                      <van-tag round size="small" :type="m.role === 'owner' ? 'warning' : 'default'">
+                        {{ m.role === 'owner' ? '家长' : '成员' }}
+                      </van-tag>
+                      <van-tag v-if="m.user_id === appState.session?.user?.id" round size="small" type="primary">
+                        我
+                      </van-tag>
+                    </div>
+                  </template>
+                  <template v-if="m.email && memberDisplayLine(m) !== m.email" #label>
+                    <span class="memberSecondary mono">{{ m.email }}</span>
+                  </template>
+                </van-cell>
+              </van-cell-group>
+            </div>
+
+            <div class="bodyHint muted">添加菜品 / 下单 / 完成订单会自动同步；页面底部也可手动同步。</div>
+          </template>
+        </div>
+      </van-collapse-item>
+    </van-collapse>
+
+    <!-- 分类管理（默认折叠） -->
+    <van-collapse v-model="categoryCollapse" class="neatCollapse">
+      <van-collapse-item name="cat">
+        <template #title>
+          <div class="neatCollapseTitle">
+            <van-icon name="apps-o" />
+            <span>分类管理</span>
+            <span class="countBadge countBadgeMuted">{{ categories.length }}</span>
+          </div>
+        </template>
+        <div class="catHint">左滑分类可改名或删除；默认分类不可删除。</div>
+        <van-cell-group inset>
+          <van-swipe-cell v-for="c in categories" :key="c.id">
+            <van-cell center :border="false" class="catCell">
+              <template #title>
+                <div class="catLine">
+                  <span class="catName">{{ c.name }}</span>
+                  <van-tag v-if="c.is_default" round size="small">默认</van-tag>
+                </div>
+              </template>
+            </van-cell>
+            <template #right>
+              <van-button
+                square
+                class="swipeBtn swipeBtnNeutral"
+                text="改名"
+                @click="renameCategory(c)"
+              />
+              <van-button
+                v-if="!c.is_default"
+                square
+                type="danger"
+                class="swipeBtn"
+                text="删除"
+                @click="delCategory(c)"
+              />
+            </template>
+          </van-swipe-cell>
+        </van-cell-group>
+        <div class="catAddRow">
+          <van-button plain round block icon="plus" @click="addCategory">
+            新增分类
+          </van-button>
+        </div>
+      </van-collapse-item>
+    </van-collapse>
+
+    <!-- 底部功能组 -->
+    <van-cell-group inset class="utilityGroup">
+      <van-cell
+        title="历史订单"
+        icon="clock-o"
+        is-link
+        label="查看已完成订单归档"
+        @click="router.push('/me/history')"
+      />
+      <van-cell
+        v-if="authed && inFamily"
+        title="手动同步"
+        icon="replay"
+        is-link
+        :label="appState.syncing ? '同步中…' : '把本机变更推上云端并拉取最新'"
+        :clickable="!appState.syncing"
+        @click="runSync('手动同步')"
+      />
+      <van-cell
+        v-if="authed"
+        title="退出登录"
+        icon="close"
+        is-link
+        label="本地数据不会被清除"
+        @click="doSignOut"
+      />
+    </van-cell-group>
+
+    <!-- 通用文本弹窗（新增/改名） -->
+    <van-popup
+      v-model:show="textPromptConfig.show"
+      round
+      safe-area-inset-bottom
+      :style="{ width: '86%', maxWidth: '360px', padding: '18px 18px 14px' }"
+    >
+      <div class="promptTitle">{{ textPromptConfig.title }}</div>
+      <van-field
+        v-model="textPromptConfig.value"
+        :placeholder="textPromptConfig.placeholder"
+        :maxlength="textPromptConfig.maxLength"
+        autofocus
+        clearable
+        @keyup.enter="confirmTextPrompt"
+      />
+      <div class="promptActions">
+        <van-button plain round block @click="textPromptConfig.show = false">
+          取消
+        </van-button>
+        <van-button
+          type="warning"
+          round
+          block
+          :disabled="!textPromptConfig.value.trim()"
+          @click="confirmTextPrompt"
+        >
+          {{ textPromptConfig.confirmText }}
+        </van-button>
       </div>
-    </div>
-  </details>
+    </van-popup>
 
-  <section class="card">
-    <h2>历史订单</h2>
-    <button class="btn" @click="router.push('/me/history')">进入历史订单</button>
-  </section>
-
-  <section class="card">
-    <div class="row">
-      <h2>分类管理（彩蛋功能配套）</h2>
-      <button class="btn sm" @click="addCategory">+ 新增分类</button>
-    </div>
-    <div class="hint">默认分类不可删除；自定义分类支持新增/重命名/删除。</div>
-
-    <div class="catList">
-      <div v-for="c in categories" :key="c.id" class="catItem">
-        <div class="left">
-          <div class="catName">
-            {{ c.name }}
-            <span v-if="c.is_default" class="tag">默认</span>
-          </div>
-        </div>
-        <div class="right">
-          <button class="btn sm" @click="renameCategory(c)">改名</button>
-          <button class="btn sm danger" :disabled="c.is_default" @click="delCategory(c)">删除</button>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <DishEditorModalImpl v-model="showEditor" :dishId="editingDishId" @saved="refreshDishes" />
+    <DishEditorModalImpl v-model="showEditor" :dishId="editingDishId" @saved="refreshDishes" />
+  </div>
 </template>
 
 <style scoped>
-.card {
-  background: rgba(255,255,255,0.72);
-  border: 1px solid rgba(0,0,0,0.06);
-  border-radius: 14px;
-  padding: 14px;
-  margin-bottom: 12px;
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
-h2 { margin: 0 0 8px; font-size: 18px; }
-h3 { margin: 0 0 8px; font-size: 16px; }
-.hint { margin-top: 6px; opacity: .78; line-height: 1.55; }
-.row { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
-.authRow .input { flex: 1; min-width: 0; }
-.grid2 { display:grid; grid-template-columns: 1fr; gap: 10px; }
-@media (min-width: 720px) { .grid2 { grid-template-columns: 1fr 1fr; } }
-.panel {
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px dashed rgba(0,0,0,0.14);
-  background: rgba(255,255,255,0.55);
-}
-.input {
-  width: 100%;
-  padding: 12px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(0,0,0,0.14);
-  background: rgba(255,255,255,0.9);
-  font-size: 16px;
-  outline: none;
-}
-.btn {
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: none;
-  background: rgba(0,0,0,0.06);
-  color: #2b2b2b;
-  font-size: 16px;
-  font-weight: 800;
-}
-.btn.primary { background:#ffb15a; }
-.btn.sm { padding: 10px 12px; font-size: 14px; }
-.btn.danger { background: rgba(211,47,47,0.14); }
-.btn:disabled { opacity: .55; }
-.kv { display: grid; grid-template-columns: 90px 1fr; gap: 8px; margin-bottom: 10px; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; }
 
-.empty { padding: 16px 0; opacity: .8; }
-.dishList { margin-top: 10px; display:flex; flex-direction:column; gap:10px; }
-.dishItem {
-  display:flex; gap:12px; align-items:center; justify-content:space-between;
-  padding: 10px; border-radius: 12px;
-  border: 1px solid rgba(0,0,0,0.08);
-  background: rgba(255,255,255,0.55);
+.wrap :deep(.van-cell-group--inset) {
+  margin: 0 16px;
 }
-.thumb {
-  width: 56px; height: 56px;
-  border-radius: 12px;
-  object-fit: cover;
-  border: 1px solid rgba(0,0,0,0.08);
-  background: rgba(0,0,0,0.04);
-}
-.thumb.ph {
-  background: linear-gradient(135deg, rgba(255,177,90,0.28), rgba(46,125,50,0.18));
-}
-.info { flex: 1; min-width: 0; }
-.name { font-size: 18px; font-weight: 900; }
-.sub { margin-top: 4px; opacity: .75; font-size: 14px; line-height: 1.4; }
-.right { display:flex; gap:8px; align-items:center; }
 
-.catList { margin-top: 10px; display:flex; flex-direction:column; gap:10px; }
-.catItem {
-  display:flex; justify-content:space-between; gap:10px; align-items:center;
-  padding: 10px; border-radius: 12px;
-  border: 1px solid rgba(0,0,0,0.08);
-  background: rgba(255,255,255,0.55);
-}
-.catName { font-weight: 900; font-size: 16px; }
-.tag {
-  margin-left: 8px;
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(0,0,0,0.06);
-  opacity: .85;
-}
-.sumTitle { cursor: pointer; font-weight: 900; }
-.sep { margin: 0 6px; opacity: .6; }
-
-.authStrip { padding: 12px 14px; }
-.authStrip.off { opacity: 0.92; }
-.authStripRow {
+/* ---------- Profile 卡 ---------- */
+.hero {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  font-size: 14px;
-  line-height: 1.45;
+  gap: 14px;
+  margin: 0 16px;
+  padding: 16px 16px;
+  background: rgba(255, 255, 255, 0.82);
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
 }
-.authDot {
-  width: 8px;
-  height: 8px;
+
+.heroAvatar {
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: rgba(0,0,0,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.06);
+  color: #8a8473;
+  font-size: 20px;
+  font-weight: 800;
   flex-shrink: 0;
 }
-.authDot.on { background: #2e7d32; box-shadow: 0 0 0 3px rgba(46,125,50,0.2); }
-.authMain { font-weight: 800; word-break: break-all; }
-.authNick { font-weight: 700; opacity: 0.85; }
 
-.nickPanel {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px dashed rgba(0,0,0,0.12);
+.heroAvatar .van-icon {
+  font-size: 22px;
 }
-.nickTitle { margin: 0 0 6px; font-size: 16px; font-weight: 900; }
-.nickRow { margin-top: 8px; align-items: stretch; }
-.nickRow .input { flex: 1; min-width: 0; }
 
-.memberBlock { margin-top: 4px; }
-.memberList {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
+.heroAvatarAuthed {
+  background: linear-gradient(135deg, var(--brand-orange-soft, #ffd9b4), var(--brand-orange, #ffb45a));
+  color: #7a3d00;
+}
+
+.heroInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.heroName {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--brand-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heroName.muted {
+  color: #8a8473;
+  font-weight: 700;
+}
+
+.heroSub {
+  font-size: 12.5px;
+  color: #8a8473;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Section ---------- */
+.section {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.memberList li {
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+  min-height: 28px;
+}
+
+.sectionHeader h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--brand-ink);
+  letter-spacing: 0.2px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(0,0,0,0.08);
-  background: rgba(255,255,255,0.5);
+  gap: 6px;
 }
-.memberPrimary {
+
+.countBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.06);
+  color: #8a8473;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.countBadgeMuted {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.dishGroup :deep(.van-cell) {
+  padding: 12px 14px;
+}
+
+.dishCell {
+  cursor: pointer;
+}
+
+.thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.04);
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.thumb.ph {
+  background: linear-gradient(135deg, rgba(255, 177, 90, 0.28), rgba(46, 125, 50, 0.18));
+}
+
+.dishName {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--brand-ink);
+}
+
+.dishSub {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: #8a8473;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editIcon {
+  font-size: 18px;
+  color: #cfc8b7;
+}
+
+.swipeBtn {
+  height: 100%;
+  min-width: 72px;
+}
+
+.swipeBtnNeutral {
+  background: #e7e2d4;
+  color: #5a523f;
+}
+
+/* ---------- 通用折叠（家庭互通 / 分类管理 共享） ---------- */
+.neatCollapse {
+  background: transparent;
+  border: none;
+}
+
+.neatCollapse :deep(.van-collapse-item) {
+  background: transparent;
+}
+
+.neatCollapse :deep(.van-collapse-item__title) {
+  background: rgba(255, 255, 255, 0.82);
+  margin: 0 16px;
+  width: auto;
+  box-sizing: border-box;
+  border-radius: 14px;
+  padding: 13px 16px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.neatCollapse :deep(.van-collapse-item__title::after) {
+  display: none;
+}
+
+.neatCollapse :deep(.van-collapse-item__wrapper) {
+  background: transparent;
+}
+
+.neatCollapse :deep(.van-collapse-item__content) {
+  background: transparent;
+  padding: 10px 0 2px;
+}
+
+.neatCollapseTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 800;
-  font-size: 16px;
-  flex: 1;
-  min-width: 0;
+  font-size: 15px;
+  color: var(--brand-ink);
+}
+
+.neatCollapseTitle .van-icon {
+  color: var(--brand-orange-strong);
+  font-size: 18px;
+}
+
+.familyBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.bodyHint {
+  padding: 2px 20px 0;
+  color: #8a8473;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.bodyHint.muted {
+  color: #a39d8c;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
   word-break: break-all;
 }
-.memberSecondary {
-  font-size: 12px;
-  opacity: 0.72;
-  max-width: 100%;
-}
-.roleTag {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(0,0,0,0.06);
-  font-weight: 700;
-}
-.meTag {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(255,177,90,0.35);
+
+.inviteCode {
+  font-size: 16px;
   font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--brand-orange-strong);
+}
+
+.memberSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sectionSubHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  min-height: 28px;
+}
+
+.subTitle {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--brand-ink);
+}
+
+.memberLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.memberPrimary {
+  font-weight: 700;
+  color: var(--brand-ink);
+}
+
+.memberSecondary {
+  opacity: 0.72;
+  font-size: 12px;
+}
+
+.cellAction {
+  padding: 10px 16px 14px;
+}
+
+.catHint {
+  padding: 0 20px 6px;
+  color: #a39d8c;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.catCell {
+  padding: 12px 14px;
+}
+
+.catAddRow {
+  padding: 10px 16px 2px;
+}
+
+.utilityGroup :deep(.van-cell) {
+  padding: 12px 14px;
+}
+
+.utilityGroup :deep(.van-cell__label) {
+  font-size: 12px;
+  color: #a39d8c;
+}
+
+.catLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.catName {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--brand-ink);
+}
+
+.promptTitle {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--brand-ink);
+  margin-bottom: 10px;
+}
+
+.promptActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
 }
 </style>
-
