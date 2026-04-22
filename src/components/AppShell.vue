@@ -40,16 +40,21 @@ function onTabChange(name) {
       </template>
       <template #right>
         <div class="rightStatus">
-          <van-tag
-            round
-            :type="appState.online ? 'success' : 'default'"
-            size="medium"
-          >
-            {{ appState.online ? '在线' : '离线' }}
-          </van-tag>
-          <van-tag v-if="syncText" round :type="syncTagType" size="medium">
+          <span
+            v-if="!appState.online"
+            class="statusDot statusDot--off"
+            aria-label="离线"
+            title="离线"
+          />
+          <van-tag v-if="syncText" round :type="syncTagType" size="small">
             {{ syncText }}
           </van-tag>
+          <span
+            v-if="appState.online && !syncText"
+            class="statusDot statusDot--on"
+            aria-label="在线"
+            title="在线"
+          />
         </div>
       </template>
     </van-nav-bar>
@@ -85,16 +90,11 @@ function onTabChange(name) {
   padding-bottom: calc(var(--van-tabbar-height) + env(safe-area-inset-bottom));
 }
 
-.topbar :deep(.van-nav-bar) {
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-}
-
 .brand {
-  font-size: 18px;
-  font-weight: 900;
-  letter-spacing: 0.3px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  color: var(--text-primary);
 }
 
 .rightStatus {
@@ -103,8 +103,26 @@ function onTabChange(name) {
   align-items: center;
 }
 
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.statusDot--on {
+  background: var(--ios-green);
+  box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.22);
+}
+
+.statusDot--off {
+  background: var(--ios-red);
+  box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.22);
+}
+
 .content {
-  padding: 12px 16px 16px;
+  padding: 10px 0 12px;
   max-width: 900px;
   margin: 0 auto;
 }

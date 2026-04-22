@@ -81,8 +81,20 @@ watch(
 
 <template>
   <div class="wrap">
+    <div class="sectionBar">
+      <h2>点菜</h2>
+      <button
+        type="button"
+        class="linkBtn"
+        :class="{ disabled: selectedCount === 0 }"
+        :disabled="selectedCount === 0"
+        @click="clearSelected"
+      >
+        清空选择
+      </button>
+    </div>
+
     <div class="layout">
-      <!-- 左侧分类：使用 Vant Sidebar -->
       <aside class="side">
         <van-sidebar
           :model-value="activeSideIndex"
@@ -96,32 +108,18 @@ watch(
         </van-sidebar>
       </aside>
 
-      <!-- 右侧菜品列表 -->
       <section class="main">
-        <div class="mainHead">
-          <h2>点菜</h2>
-          <van-button
-            size="small"
-            plain
-            round
-            :disabled="selectedCount === 0"
-            @click="clearSelected"
-          >
-            清空
-          </van-button>
-        </div>
-
         <van-empty
           v-if="dishes.length === 0"
           image="search"
           description="该分类暂无菜品，去「我的」添加新菜吧"
         />
 
-        <div v-else class="dishList">
+        <van-cell-group v-else inset class="dishGroup">
           <div
             v-for="d in dishes"
             :key="d.id"
-            class="dish"
+            class="dishRow"
             :class="{ on: selected.has(d.id) }"
             role="button"
             :aria-pressed="selected.has(d.id)"
@@ -140,19 +138,18 @@ watch(
                 <span v-if="(d.ingredients_text || '').length > 30">…</span>
               </div>
             </div>
-            <van-checkbox
-              :model-value="selected.has(d.id)"
-              shape="round"
-              checked-color="var(--brand-orange-strong)"
-              @click.stop
-              @update:model-value="toggleDish(d.id)"
-            />
+            <span
+              class="checkMark"
+              :class="{ on: selected.has(d.id) }"
+              aria-hidden="true"
+            >
+              <van-icon v-if="selected.has(d.id)" name="success" />
+            </span>
           </div>
-        </div>
+        </van-cell-group>
       </section>
     </div>
 
-    <!-- 底部提交栏 -->
     <van-submit-bar
       class="submitBar"
       :disabled="!canGen"
@@ -176,22 +173,54 @@ watch(
   padding-bottom: calc(50px + var(--van-tabbar-height) + env(safe-area-inset-bottom));
 }
 
+.sectionBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 6px 20px 10px;
+}
+
+h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
+}
+
+.linkBtn {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: var(--brand-orange-strong);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.linkBtn.disabled,
+.linkBtn:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
 .layout {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-start;
+  padding: 0 16px;
 }
 
 .side {
-  width: 108px;
-  background: rgba(255, 255, 255, 0.72);
+  width: 92px;
+  background: var(--surface-card);
   border-radius: 14px;
   padding: 6px 0;
   position: sticky;
   top: 62px;
   max-height: calc(100vh - 62px - 56px - 70px);
   overflow: auto;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  border: 0.5px solid var(--hairline-soft);
 }
 
 .side :deep(.van-sidebar) {
@@ -200,66 +229,54 @@ watch(
 
 .side :deep(.van-sidebar-item) {
   background: transparent;
+  padding: 11px 10px;
+}
+
+.side :deep(.van-sidebar-item__text) {
+  font-size: 13px;
 }
 
 .main {
   flex: 1;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.dishGroup {
+  margin: 0 !important;
+  background: var(--surface-card-solid);
   border-radius: 14px;
-  padding: 14px;
+  overflow: hidden;
 }
 
-.mainHead {
+.dishRow {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.dishList {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.dish {
-  display: flex;
   gap: 12px;
-  align-items: center;
-  padding: 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  background: #fff;
-  transition: all 0.15s ease;
+  padding: 10px 12px;
   cursor: pointer;
   user-select: none;
+  position: relative;
+  transition: background 0.15s ease;
 }
 
-.dish:active {
-  transform: scale(0.99);
+.dishRow + .dishRow {
+  border-top: 0.5px solid var(--hairline-soft);
 }
 
-.dish.on {
-  border-color: rgba(245, 146, 50, 0.6);
-  background: rgba(255, 177, 90, 0.08);
-  box-shadow: 0 0 0 2px rgba(245, 146, 50, 0.15) inset;
+.dishRow:active {
+  background: rgba(60, 60, 67, 0.08);
+}
+
+.dishRow.on {
+  background: rgba(255, 177, 90, 0.1);
 }
 
 .thumb {
-  width: 60px;
-  height: 60px;
-  border-radius: 12px;
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
   object-fit: cover;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 0.5px solid var(--hairline-soft);
   background: rgba(0, 0, 0, 0.04);
   flex-shrink: 0;
 }
@@ -275,19 +292,43 @@ h2 {
 }
 
 .name {
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--brand-ink);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.25;
 }
 
 .sub {
-  margin-top: 4px;
-  color: #8a8473;
-  font-size: 13px;
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.checkMark {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ios-gray-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.checkMark.on {
+  background: var(--brand-orange-strong);
+  border-color: var(--brand-orange-strong);
+  color: #fff;
+}
+
+.checkMark .van-icon {
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .submitBar {
@@ -295,26 +336,31 @@ h2 {
 }
 
 .submitBar :deep(.van-submit-bar__button) {
-  font-weight: 700;
+  font-weight: 600;
+  padding: 0 20px;
+  height: 38px;
+  line-height: 38px;
+  border-radius: 19px;
 }
 
 .submitTip {
   font-size: 14px;
-  color: var(--brand-ink);
+  color: var(--text-primary);
 }
+
 .submitTip.muted {
-  color: #8a8473;
+  color: var(--text-tertiary);
 }
+
 .submitTip b {
   color: var(--brand-orange-strong);
-  font-weight: 900;
+  font-weight: 700;
   margin: 0 2px;
 }
 
 @media (max-width: 520px) {
-  .layout { gap: 8px; }
-  .side { width: 92px; }
-  .main { padding: 10px; }
-  .thumb { width: 56px; height: 56px; }
+  .layout { gap: 8px; padding: 0 12px; }
+  .side { width: 86px; }
+  .thumb { width: 44px; height: 44px; }
 }
 </style>

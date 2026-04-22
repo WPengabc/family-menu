@@ -1,5 +1,5 @@
 :root {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   line-height: 1.5;
   font-weight: 400;
   font-synthesis: none;
@@ -15,15 +15,14 @@ html, body {
 body {
   margin: 0;
   min-width: 320px;
-  background: #f3ebdd;
-  color: #2b2b2b;
+  background: var(--brand-cream);
+  color: var(--brand-ink);
 }
 
 #app {
   min-height: 100%;
 }
 
-/* 避免浏览器默认按钮样式影响 */
 button, input, textarea, select {
   font: inherit;
 }
@@ -33,66 +32,412 @@ button, input, textarea, select {
   outline-offset: 2px;
 }
 
-/* ---------- Vant 主题：对齐家庭点菜的米黄 + 暖橙基调 ---------- */
+/* ================= Design tokens ================= */
 :root {
+  /* 品牌 */
   --brand-cream: #f3ebdd;
+  --brand-cream-raised: #fbf6ec;
   --brand-orange: #ffb15a;
   --brand-orange-strong: #f59232;
-  --brand-ink: #2b2b2b;
+  --brand-orange-soft: #ffd9b4;
+  --brand-ink: #1c1c1e;
 
-  /* Vant 全局色 */
+  /* 语义色（iOS 风格） */
+  --ios-blue: #0a84ff;
+  --ios-green: #34c759;
+  --ios-green-dim: #2e7d32;
+  --ios-red: #ff3b30;
+  --ios-red-dim: #c82333;
+  --ios-yellow: #f59232;
+  --ios-gray: #8e8e93;
+  --ios-gray-2: #c7c7cc;
+  --ios-gray-3: #d1d1d6;
+  --ios-gray-4: #e5e5ea;
+
+  /* 文字 */
+  --text-primary: #1c1c1e;
+  --text-secondary: #6a6357;
+  --text-tertiary: #a39d8c;
+
+  /* 卡片 / 分隔 */
+  --surface-card: rgba(255, 255, 255, 0.78);
+  --surface-card-solid: #ffffff;
+  --hairline: rgba(60, 60, 67, 0.18);
+  --hairline-soft: rgba(60, 60, 67, 0.12);
+
+  /* 圆角 */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-sheet: 22px;
+
+  /* ============ Vant 主题 ============ */
   --van-primary-color: var(--brand-orange-strong);
-  --van-success-color: #2e7d32;
-  --van-danger-color: #d33b3b;
-  --van-warning-color: #e6a23c;
-
-  /* 圆角 / 字体 */
+  --van-success-color: var(--ios-green-dim);
+  --van-danger-color: var(--ios-red);
+  --van-warning-color: var(--brand-orange);
+  --van-text-color: var(--text-primary);
+  --van-text-color-2: var(--text-secondary);
+  --van-text-color-3: var(--text-tertiary);
+  --van-background: var(--brand-cream);
+  --van-background-2: var(--brand-cream-raised);
+  --van-border-color: var(--hairline);
+  --van-radius-sm: 8px;
   --van-radius-md: 12px;
-  --van-radius-lg: 16px;
+  --van-radius-lg: 14px;
+  --van-font-size-sm: 13px;
   --van-font-size-md: 15px;
-  --van-font-bold: 700;
+  --van-font-size-lg: 17px;
+  --van-font-bold: 600;
 
-  /* NavBar */
-  --van-nav-bar-background: rgba(243, 235, 221, 0.92);
-  --van-nav-bar-title-text-color: var(--brand-ink);
+  /* NavBar：iOS 毛玻璃 */
+  --van-nav-bar-background: rgba(246, 239, 227, 0.78);
+  --van-nav-bar-title-text-color: var(--text-primary);
   --van-nav-bar-title-font-size: 17px;
   --van-nav-bar-arrow-size: 18px;
-  --van-nav-bar-icon-color: var(--brand-ink);
+  --van-nav-bar-icon-color: var(--text-primary);
+  --van-nav-bar-height: 46px;
 
-  /* Tabbar */
-  --van-tabbar-background: rgba(255, 255, 255, 0.96);
+  /* Tabbar：iOS 毛玻璃 */
+  --van-tabbar-background: rgba(253, 250, 243, 0.86);
   --van-tabbar-item-active-color: var(--brand-orange-strong);
   --van-tabbar-item-active-background: transparent;
-  --van-tabbar-item-text-color: #8a8473;
-  --van-tabbar-item-font-size: 12px;
-  --van-tabbar-height: 56px;
+  --van-tabbar-item-text-color: #86807a;
+  --van-tabbar-item-font-size: 10px;
+  --van-tabbar-item-icon-size: 22px;
+  --van-tabbar-height: 54px;
 
   /* Sidebar */
   --van-sidebar-background: transparent;
-  --van-sidebar-selected-background: rgba(255, 177, 90, 0.22);
+  --van-sidebar-selected-background: rgba(255, 177, 90, 0.18);
   --van-sidebar-selected-border-color: var(--brand-orange-strong);
-  --van-sidebar-selected-font-weight: 800;
+  --van-sidebar-selected-font-weight: 600;
   --van-sidebar-font-size: 14px;
-  --van-sidebar-padding: 14px 10px;
+  --van-sidebar-padding: 12px 10px;
 
-  /* Card */
-  --van-card-background: rgba(255, 255, 255, 0.75);
-  --van-card-thumb-size: 72px;
-  --van-card-thumb-border-radius: 12px;
+  /* Cell */
+  --van-cell-font-size: 15px;
+  --van-cell-line-height: 22px;
+  --van-cell-vertical-padding: 11px;
+  --van-cell-horizontal-padding: 16px;
+  --van-cell-label-color: var(--text-secondary);
+  --van-cell-label-font-size: 12.5px;
+  --van-cell-group-background: var(--surface-card-solid);
+  --van-cell-group-title-color: var(--text-secondary);
+  --van-cell-group-title-font-size: 12.5px;
+  --van-cell-group-title-padding: 16px 20px 6px;
 
   /* SubmitBar */
-  --van-submit-bar-background: rgba(243, 235, 221, 0.98);
+  --van-submit-bar-background: rgba(253, 250, 243, 0.9);
+  --van-submit-bar-height: 54px;
+  --van-submit-bar-button-width: auto;
 
   /* Button */
   --van-button-primary-background: var(--brand-orange-strong);
   --van-button-primary-border-color: var(--brand-orange-strong);
   --van-button-warning-background: var(--brand-orange);
   --van-button-warning-border-color: var(--brand-orange);
-  --van-button-border-radius: 12px;
+  --van-button-default-background: transparent;
+  --van-button-border-radius: 10px;
   --van-button-round-border-radius: 999px;
 
-  /* Tag */
-  --van-tag-success-color: #2e7d32;
-  --van-tag-danger-color: #b52b2b;
+  /* Tag（iOS tinted pill） */
+  --van-tag-success-color: var(--ios-green-dim);
+  --van-tag-danger-color: var(--ios-red-dim);
+  --van-tag-text-color: var(--text-secondary);
+  --van-tag-padding: 2px 9px;
+  --van-tag-font-size: 12px;
+  --van-tag-line-height: 16px;
+
+  /* Popup / Dialog */
+  --van-overlay-background: rgba(22, 16, 10, 0.42);
+  --van-popup-background: var(--surface-card-solid);
+  --van-picker-background: var(--surface-card-solid);
+  --van-picker-toolbar-height: 52px;
+  --van-picker-title-font-size: 16px;
+  --van-picker-confirm-action-color: var(--brand-orange-strong);
+  --van-picker-cancel-action-color: var(--text-secondary);
+
+  /* Field */
+  --van-field-label-color: var(--text-primary);
+  --van-field-placeholder-text-color: #b5afa2;
 }
 
+/* ========== NavBar 毛玻璃 ========== */
+.van-nav-bar {
+  backdrop-filter: saturate(1.4) blur(18px);
+  -webkit-backdrop-filter: saturate(1.4) blur(18px);
+  border-bottom: 0.5px solid var(--hairline-soft) !important;
+}
+
+.van-nav-bar__title {
+  font-weight: 600 !important;
+  letter-spacing: 0.1px;
+}
+
+/* ========== Tabbar 毛玻璃 + 顶部 hairline ========== */
+.van-tabbar {
+  backdrop-filter: saturate(1.6) blur(20px);
+  -webkit-backdrop-filter: saturate(1.6) blur(20px);
+  border-top: 0.5px solid var(--hairline-soft);
+}
+
+.van-tabbar::after {
+  border-top-color: transparent !important;
+}
+
+.van-tabbar-item__icon {
+  margin-bottom: 2px !important;
+}
+
+.van-tabbar-item__text {
+  font-weight: 500;
+}
+
+/* ========== Cell / CellGroup（iOS 分组列表） ========== */
+.van-cell-group--inset {
+  border-radius: var(--radius-md) !important;
+  overflow: hidden;
+  box-shadow: 0 0.5px 0 var(--hairline-soft);
+}
+
+.van-cell-group__title {
+  text-transform: none;
+  letter-spacing: 0.1px;
+  font-weight: 500;
+}
+
+.van-cell::after {
+  border-bottom: 0.5px solid var(--hairline-soft) !important;
+  left: 16px !important;
+  right: 16px !important;
+}
+
+.van-cell:last-child::after,
+.van-cell--borderless::after {
+  display: none !important;
+}
+
+.van-cell__label {
+  margin-top: 2px !important;
+  color: var(--text-tertiary) !important;
+}
+
+/* ========== Tag（iOS tinted pill） ========== */
+.van-tag--plain {
+  background: transparent;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.van-tag--default {
+  background: rgba(120, 120, 128, 0.16) !important;
+  color: var(--text-secondary) !important;
+  border: none !important;
+}
+
+.van-tag--success {
+  background: rgba(52, 199, 89, 0.16) !important;
+  color: var(--ios-green-dim) !important;
+  border: none !important;
+}
+
+.van-tag--warning {
+  background: rgba(255, 149, 0, 0.18) !important;
+  color: #a45f00 !important;
+  border: none !important;
+}
+
+.van-tag--danger {
+  background: rgba(255, 59, 48, 0.16) !important;
+  color: var(--ios-red-dim) !important;
+  border: none !important;
+}
+
+.van-tag--medium {
+  padding: 3px 10px !important;
+  font-size: 12px !important;
+  line-height: 16px !important;
+}
+
+.van-tag--small {
+  padding: 1px 7px !important;
+  font-size: 11px !important;
+  line-height: 14px !important;
+}
+
+/* ========== Button：iOS 风格 ========== */
+.van-button {
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+
+.van-button--warning,
+.van-button--primary {
+  box-shadow: 0 2px 10px rgba(245, 146, 50, 0.22);
+}
+
+.van-button--plain {
+  background: rgba(120, 120, 128, 0.12) !important;
+  border-color: transparent !important;
+  color: var(--text-primary) !important;
+}
+
+.van-button--plain.van-button--warning,
+.van-button--plain.van-button--primary {
+  background: rgba(245, 146, 50, 0.14) !important;
+  color: var(--brand-orange-strong) !important;
+  box-shadow: none !important;
+}
+
+.van-button--plain.van-button--danger {
+  background: rgba(255, 59, 48, 0.12) !important;
+  color: var(--ios-red-dim) !important;
+  box-shadow: none !important;
+}
+
+/* ========== Switch（偏 iOS） ========== */
+.van-switch {
+  --van-switch-on-background: var(--ios-green);
+  --van-switch-background: var(--ios-gray-3);
+}
+
+/* ========== iOS Dialog（showConfirmDialog / showDialog） ========== */
+.van-dialog {
+  width: 270px !important;
+  max-width: calc(100vw - 48px);
+  border-radius: 14px !important;
+  background: rgba(249, 247, 243, 0.94) !important;
+  backdrop-filter: saturate(1.6) blur(22px);
+  -webkit-backdrop-filter: saturate(1.6) blur(22px);
+  box-shadow: 0 18px 48px rgba(24, 16, 8, 0.22);
+  overflow: hidden;
+}
+
+.van-dialog__header {
+  padding: 18px 16px 0 !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: var(--brand-ink) !important;
+  text-align: center !important;
+}
+
+.van-dialog__header--isolated {
+  padding-bottom: 18px !important;
+}
+
+.van-dialog__content {
+  padding: 0 !important;
+}
+
+.van-dialog__message {
+  padding: 6px 16px 18px !important;
+  font-size: 13px !important;
+  color: var(--text-secondary) !important;
+  line-height: 1.5 !important;
+  text-align: center !important;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.van-dialog__footer {
+  padding: 0 !important;
+  border-top: 0.5px solid var(--hairline);
+  min-height: 44px;
+  display: flex !important;
+}
+
+.van-dialog__footer.van-dialog__footer--buttons .van-button,
+.van-dialog__cancel,
+.van-dialog__confirm {
+  flex: 1 !important;
+  height: 44px !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  font-size: 16px !important;
+  font-weight: 400 !important;
+  color: var(--brand-orange-strong) !important;
+  line-height: 44px !important;
+  box-shadow: none !important;
+}
+
+.van-dialog__cancel {
+  color: var(--text-secondary) !important;
+}
+
+.van-dialog__confirm {
+  font-weight: 600 !important;
+}
+
+.van-dialog__cancel + .van-dialog__confirm,
+.van-dialog__footer > .van-button + .van-button {
+  border-left: 0.5px solid var(--hairline) !important;
+}
+
+.van-dialog__cancel:active,
+.van-dialog__confirm:active,
+.van-dialog__footer > .van-button:active {
+  background: rgba(60, 60, 67, 0.12) !important;
+}
+
+.van-dialog__footer.van-hairline--top::after {
+  display: none !important;
+}
+
+/* ========== iOS Toast ========== */
+.van-toast {
+  border-radius: 14px !important;
+  padding: 12px 16px !important;
+  font-size: 14px !important;
+  background: rgba(28, 22, 14, 0.88) !important;
+  color: #ffffff !important;
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  max-width: 260px !important;
+}
+
+.van-toast,
+.van-toast__text,
+.van-toast .van-icon {
+  color: #ffffff !important;
+}
+
+.van-toast__text {
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.van-toast--loading .van-loading__spinner,
+.van-toast--success .van-icon,
+.van-toast--fail .van-icon {
+  color: #ffffff !important;
+}
+
+/* ========== Picker 细节 ========== */
+.van-picker__toolbar {
+  border-bottom: 0.5px solid var(--hairline-soft);
+}
+
+.van-picker__confirm,
+.van-picker__cancel {
+  font-weight: 600;
+}
+
+/* ========== Empty / Loading ========== */
+.van-empty__description {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+/* ========== SubmitBar 毛玻璃 ========== */
+.van-submit-bar {
+  backdrop-filter: saturate(1.4) blur(18px);
+  -webkit-backdrop-filter: saturate(1.4) blur(18px);
+  border-top: 0.5px solid var(--hairline-soft) !important;
+}
+
+.van-submit-bar::before {
+  display: none !important;
+}

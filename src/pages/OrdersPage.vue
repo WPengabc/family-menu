@@ -1,6 +1,6 @@
 <script setup>
 defineOptions({ name: 'OrdersPage' })
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { showConfirmDialog } from 'vant'
 import { completeOrderLocal, deleteOrderLocal, enqueueCloudOp, listOrders } from '../lib/dataService'
@@ -11,6 +11,13 @@ import { formatTime } from '../lib/utils'
 const route = useRoute()
 const orders = ref([])
 const activeCollapses = ref({})
+const activeTab = ref('pending') // 'pending' | 'done'
+
+const pendingOrders = computed(() => orders.value.filter((o) => o.status === '未完成'))
+const doneOrders = computed(() => orders.value.filter((o) => o.status === '已完成'))
+const visibleOrders = computed(() =>
+  activeTab.value === 'pending' ? pendingOrders.value : doneOrders.value,
+)
 
 function ensureCollapseState() {
   const next = {}
@@ -82,23 +89,51 @@ watch(
 
 <template>
   <div class="wrap">
-    <section class="headerCard">
-      <div class="row">
-        <h2>订单</h2>
-        <van-button size="small" plain round icon="replay" @click="refresh">刷新</van-button>
-      </div>
-      <div class="hint">未完成订单会置顶显示，完成后自动归档到历史。左滑订单可以快速删除。</div>
-    </section>
+    <div class="sectionBar">
+      <h2>订单</h2>
+      <button type="button" class="linkBtn" @click="refresh">刷新</button>
+    </div>
+
+    <div class="segmented" role="tablist">
+      <button
+        type="button"
+        class="segItem"
+        :class="{ on: activeTab === 'pending' }"
+        role="tab"
+        :aria-selected="activeTab === 'pending'"
+        @click="activeTab = 'pending'"
+      >
+        未完成
+        <span v-if="pendingOrders.length" class="segBadge">
+          {{ pendingOrders.length }}
+        </span>
+      </button>
+      <button
+        type="button"
+        class="segItem"
+        :class="{ on: activeTab === 'done' }"
+        role="tab"
+        :aria-selected="activeTab === 'done'"
+        @click="activeTab = 'done'"
+      >
+        已完成
+        <span v-if="doneOrders.length" class="segBadge segBadge--muted">
+          {{ doneOrders.length }}
+        </span>
+      </button>
+    </div>
+
+    <p class="pageHint">左滑订单可快速删除。已完成订单稍后会自动归档到历史。</p>
 
     <van-empty
-      v-if="orders.length === 0"
+      v-if="visibleOrders.length === 0"
       image="search"
-      description="暂无订单，去点菜页勾选生成订单吧"
+      :description="activeTab === 'pending' ? '暂无未完成订单，去点菜页勾选生成订单吧' : '暂无已完成订单'"
     />
 
     <template v-else>
       <van-swipe-cell
-        v-for="o in orders"
+        v-for="o in visibleOrders"
         :key="o.id"
         class="orderCell"
       >
@@ -112,7 +147,6 @@ watch(
               :type="o.status === '已完成' ? 'success' : 'warning'"
               round
               size="medium"
-              plain
             >
               {{ o.status }}
             </van-tag>
@@ -120,15 +154,18 @@ watch(
 
           <div class="meta">
             <span>下单 {{ formatTime(o.created_at) }}</span>
-            <span class="sep">·</span>
-            <span>完成 {{ formatTime(o.completed_at) }}</span>
+            <span v-if="o.status === '已完成'">
+              <span class="sep">·</span>
+              完成 {{ formatTime(o.completed_at) }}
+            </span>
           </div>
 
           <van-collapse v-model="activeCollapses[o.id]" accordion :border="false" class="collapseBlock">
             <van-collapse-item :name="o.id">
               <template #title>
                 <span class="collapseTitle">
-                  查看菜品 <span class="countBadge">{{ (o.snapshot_dishes || []).length }}</span>
+                  查看菜品
+                  <span class="countBadge">{{ (o.snapshot_dishes || []).length }}</span>
                 </span>
               </template>
               <div class="snap">
@@ -150,7 +187,6 @@ watch(
               type="warning"
               round
               block
-              icon="success"
               @click="complete(o.id)"
             >
               完成订单
@@ -176,34 +212,97 @@ watch(
 .wrap {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  padding: 0 16px;
 }
 
-.headerCard {
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 14px;
-  padding: 14px;
-}
-
-.row {
+.sectionBar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 10px;
+  align-items: baseline;
+  padding: 6px 4px 0;
 }
 
 h2 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 900;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
 }
 
-.hint {
-  margin-top: 8px;
-  color: #8a8473;
+.linkBtn {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: var(--brand-orange-strong);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pageHint {
+  margin: 0 4px 4px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.segmented {
+  display: flex;
+  background: rgba(60, 60, 67, 0.1);
+  border-radius: 9px;
+  padding: 2px;
+  margin: 4px 0 2px;
+}
+
+.segItem {
+  flex: 1;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
   font-size: 13px;
-  line-height: 1.55;
+  font-weight: 500;
+  border-radius: 7px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+
+.segItem.on {
+  background: var(--surface-card-solid);
+  color: var(--text-primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  font-weight: 600;
+}
+
+.segBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: rgba(255, 149, 0, 0.22);
+  color: #a45f00;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.segBadge--muted {
+  background: rgba(52, 199, 89, 0.18);
+  color: var(--ios-green-dim);
+}
+
+.segItem:not(.on) .segBadge {
+  background: rgba(60, 60, 67, 0.14);
+  color: var(--text-secondary);
 }
 
 .orderCell {
@@ -217,18 +316,17 @@ h2 {
 }
 
 .orderCard {
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  background: var(--surface-card-solid);
+  border: 0.5px solid var(--hairline-soft);
   border-radius: 14px;
-  padding: 14px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
 .orderCard.done {
-  background: rgba(255, 255, 255, 0.6);
-  opacity: 0.92;
+  background: rgba(255, 255, 255, 0.56);
 }
 
 .orderHead {
@@ -244,23 +342,24 @@ h2 {
 }
 
 .oid {
-  font-size: 17px;
-  font-weight: 900;
-  color: var(--brand-ink);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
   word-break: break-all;
+  letter-spacing: 0.2px;
 }
 
 .placedBy {
-  margin-top: 4px;
-  font-size: 14px;
-  color: #5a5545;
-  font-weight: 600;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-weight: 400;
 }
 
 .meta {
-  color: #8a8473;
-  font-size: 13px;
-  line-height: 1.5;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .sep {
@@ -270,14 +369,18 @@ h2 {
 
 .collapseBlock {
   background: transparent;
-  border-radius: 10px;
-  margin: 0 -6px;
+  margin: 0 -4px;
 }
 
 .collapseBlock :deep(.van-collapse-item__title) {
-  background: rgba(255, 177, 90, 0.08);
+  background: rgba(60, 60, 67, 0.06);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 9px 12px;
+  min-height: 0;
+}
+
+.collapseBlock :deep(.van-cell::after) {
+  display: none !important;
 }
 
 .collapseBlock :deep(.van-collapse-item__title::after) {
@@ -290,52 +393,63 @@ h2 {
 }
 
 .collapseTitle {
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--brand-ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 .countBadge {
-  display: inline-block;
-  background: var(--brand-orange-strong);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(60, 60, 67, 0.14);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
   border-radius: 999px;
-  padding: 1px 8px;
-  margin-left: 4px;
-  min-width: 20px;
-  text-align: center;
+  padding: 0 7px;
+  min-width: 18px;
+  height: 16px;
+  line-height: 1;
 }
 
 .snap {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .snapItem {
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(255, 177, 90, 0.07);
-  border: 1px solid rgba(255, 177, 90, 0.18);
+  background: rgba(255, 177, 90, 0.08);
+  border: 0.5px solid rgba(255, 177, 90, 0.22);
 }
 
 .snapName {
-  font-weight: 800;
-  font-size: 15px;
-  color: var(--brand-ink);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
 }
 
 .snapIng {
   margin-top: 3px;
-  font-size: 13px;
-  color: #6b6555;
+  font-size: 12.5px;
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
 .orderActions {
   margin-top: 2px;
+}
+
+.orderActions :deep(.van-button) {
+  height: 38px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .swipeBtn {

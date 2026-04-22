@@ -769,35 +769,37 @@ watch(
       />
     </van-cell-group>
 
-    <!-- 通用文本弹窗（新增/改名） -->
+    <!-- 通用文本弹窗（新增/改名）- iOS alert 风格 -->
     <van-popup
       v-model:show="textPromptConfig.show"
-      round
-      safe-area-inset-bottom
-      :style="{ width: '86%', maxWidth: '360px', padding: '18px 18px 14px' }"
+      class="iosAlert"
+      :close-on-click-overlay="true"
     >
-      <div class="promptTitle">{{ textPromptConfig.title }}</div>
-      <van-field
-        v-model="textPromptConfig.value"
-        :placeholder="textPromptConfig.placeholder"
-        :maxlength="textPromptConfig.maxLength"
-        autofocus
-        clearable
-        @keyup.enter="confirmTextPrompt"
-      />
-      <div class="promptActions">
-        <van-button plain round block @click="textPromptConfig.show = false">
+      <div class="iosAlertBody">
+        <div class="iosAlertTitle">{{ textPromptConfig.title }}</div>
+        <div class="iosAlertInputWrap">
+          <input
+            v-model="textPromptConfig.value"
+            class="iosAlertInput"
+            :placeholder="textPromptConfig.placeholder"
+            :maxlength="textPromptConfig.maxLength"
+            autofocus
+            @keyup.enter="confirmTextPrompt"
+          />
+        </div>
+      </div>
+      <div class="iosAlertActions">
+        <button type="button" class="iosAlertBtn" @click="textPromptConfig.show = false">
           取消
-        </van-button>
-        <van-button
-          type="warning"
-          round
-          block
+        </button>
+        <button
+          type="button"
+          class="iosAlertBtn iosAlertBtnPrimary"
           :disabled="!textPromptConfig.value.trim()"
           @click="confirmTextPrompt"
         >
           {{ textPromptConfig.confirmText }}
-        </van-button>
+        </button>
       </div>
     </van-popup>
 
@@ -1137,17 +1139,84 @@ watch(
   color: var(--brand-ink);
 }
 
-.promptTitle {
-  font-size: 17px;
-  font-weight: 900;
+/* ---------- iOS Alert 风格（新增分类 / 改名） ---------- */
+.iosAlert {
+  width: 270px !important;
+  border-radius: 14px !important;
+  overflow: hidden;
+  background: rgba(249, 247, 243, 0.94) !important;
+  backdrop-filter: saturate(1.6) blur(22px);
+  -webkit-backdrop-filter: saturate(1.6) blur(22px);
+  box-shadow: 0 18px 48px rgba(24, 16, 8, 0.22);
+}
+
+.iosAlertBody {
+  padding: 18px 16px 16px;
+  text-align: center;
+}
+
+.iosAlertTitle {
+  font-size: 16px;
+  font-weight: 700;
   color: var(--brand-ink);
   margin-bottom: 10px;
 }
 
-.promptActions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 14px;
+.iosAlertInputWrap {
+  border: 0.5px solid rgba(60, 60, 67, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 7px 9px;
+}
+
+.iosAlertInput {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--brand-ink);
+  line-height: 1.3;
+}
+
+.iosAlertActions {
+  border-top: 0.5px solid rgba(60, 60, 67, 0.22);
+  min-height: 44px;
+  display: flex;
+}
+
+.iosAlertBtn {
+  flex: 1;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--brand-orange-strong);
+  font-size: 16px;
+  font-weight: 400;
+  cursor: pointer;
+  padding: 0;
+  line-height: 44px;
+}
+
+.iosAlertBtn + .iosAlertBtn {
+  border-left: 0.5px solid rgba(60, 60, 67, 0.22);
+}
+
+.iosAlertBtn:first-child {
+  color: #8a8473;
+}
+
+.iosAlertBtnPrimary {
+  font-weight: 600;
+}
+
+.iosAlertBtn:active {
+  background: rgba(60, 60, 67, 0.12);
+}
+
+.iosAlertBtn:disabled {
+  color: rgba(60, 60, 67, 0.3) !important;
+  background: transparent !important;
+  cursor: not-allowed;
 }
 </style>

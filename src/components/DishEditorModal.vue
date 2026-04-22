@@ -244,11 +244,12 @@ onBeforeUnmount(() => {
     closeable
     close-on-click-overlay
     safe-area-inset-bottom
-    class="editorPopup"
+    class="editorPopup modalSheet"
     :style="{ maxHeight: '92vh' }"
     @update:show="(v) => emit('update:modelValue', v)"
   >
     <div class="popHeader">
+      <div class="popGrabber" aria-hidden="true" />
       <div class="popTitle">{{ props.dishId ? '编辑菜品' : '添加新菜' }}</div>
     </div>
 
@@ -342,6 +343,7 @@ onBeforeUnmount(() => {
       round
       safe-area-inset-bottom
       teleport="body"
+      class="pickerPopup"
     >
       <van-picker
         :columns="categoryColumns"
@@ -351,34 +353,38 @@ onBeforeUnmount(() => {
       />
     </van-popup>
 
-    <!-- 新建分类 -->
+    <!-- 新建分类（iOS alert 风格） -->
     <van-popup
       v-model:show="showAddCategory"
-      round
-      safe-area-inset-bottom
       teleport="body"
-      :style="{ width: '86%', maxWidth: '360px', padding: '18px 18px 14px' }"
+      class="iosAlert"
+      :close-on-click-overlay="true"
     >
-      <div class="addCatTitle">新建分类</div>
-      <van-field
-        v-model="newCategoryName"
-        placeholder="例如：川菜 / 早餐"
-        maxlength="12"
-        autofocus
-        @keyup.enter="confirmAddCategory"
-      />
-      <div class="addCatActions">
-        <van-button plain round block size="normal" @click="showAddCategory = false">取消</van-button>
-        <van-button
-          type="warning"
-          round
-          block
-          size="normal"
+      <div class="iosAlertBody">
+        <div class="iosAlertTitle">新建分类</div>
+        <div class="iosAlertInputWrap">
+          <input
+            v-model="newCategoryName"
+            class="iosAlertInput"
+            placeholder="例如：川菜 / 早餐"
+            maxlength="12"
+            autofocus
+            @keyup.enter="confirmAddCategory"
+          />
+        </div>
+      </div>
+      <div class="iosAlertActions">
+        <button
+          type="button"
+          class="iosAlertBtn"
+          @click="showAddCategory = false"
+        >取消</button>
+        <button
+          type="button"
+          class="iosAlertBtn iosAlertBtnPrimary"
           :disabled="!newCategoryName.trim()"
           @click="confirmAddCategory"
-        >
-          创建
-        </van-button>
+        >创建</button>
       </div>
     </van-popup>
   </van-popup>
@@ -389,39 +395,42 @@ onBeforeUnmount(() => {
   --van-cell-group-inset-padding: 0 12px;
 }
 
+.modalSheet {
+  border-top-left-radius: 14px !important;
+  border-top-right-radius: 14px !important;
+  background: #fffdf8 !important;
+}
+
 .popHeader {
-  padding: 18px 18px 6px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  position: relative;
+  padding: 10px 16px 12px;
+  border-bottom: 0.5px solid rgba(60, 60, 67, 0.14);
+  text-align: center;
+}
+
+.popGrabber {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(60, 60, 67, 0.25);
+  margin: 0 auto 10px;
 }
 
 .popTitle {
-  font-size: 18px;
-  font-weight: 900;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--brand-ink);
+  letter-spacing: 0.2px;
 }
 
 .popBody {
-  padding: 12px 0 16px;
+  padding: 12px 0 18px;
   overflow-y: auto;
   max-height: calc(92vh - 60px);
 }
 
 .submitRow {
   padding: 14px 16px 4px;
-}
-
-.addCatTitle {
-  font-size: 17px;
-  font-weight: 900;
-  color: var(--brand-ink);
-  margin-bottom: 10px;
-}
-
-.addCatActions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 14px;
 }
 
 :deep(.van-cell-group--inset) {
@@ -432,5 +441,90 @@ onBeforeUnmount(() => {
   width: 64px;
   font-weight: 700;
   color: var(--brand-ink);
+}
+
+/* ---------- iOS Alert 通用：新建分类 ---------- */
+.iosAlert {
+  width: 270px !important;
+  border-radius: 14px !important;
+  overflow: hidden;
+  background: rgba(249, 247, 243, 0.94) !important;
+  backdrop-filter: saturate(1.6) blur(22px);
+  -webkit-backdrop-filter: saturate(1.6) blur(22px);
+  box-shadow: 0 18px 48px rgba(24, 16, 8, 0.22);
+}
+
+.iosAlertBody {
+  padding: 18px 16px 16px;
+  text-align: center;
+}
+
+.iosAlertTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--brand-ink);
+  margin-bottom: 10px;
+}
+
+.iosAlertInputWrap {
+  border: 0.5px solid rgba(60, 60, 67, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 7px 9px;
+}
+
+.iosAlertInput {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--brand-ink);
+  line-height: 1.3;
+}
+
+.iosAlertActions {
+  border-top: 0.5px solid rgba(60, 60, 67, 0.22);
+  min-height: 44px;
+  display: flex;
+}
+
+.iosAlertBtn {
+  flex: 1;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--brand-orange-strong);
+  font-size: 16px;
+  font-weight: 400;
+  cursor: pointer;
+  padding: 0;
+  line-height: 44px;
+}
+
+.iosAlertBtn + .iosAlertBtn {
+  border-left: 0.5px solid rgba(60, 60, 67, 0.22);
+}
+
+.iosAlertBtn:first-child {
+  color: #8a8473;
+}
+
+.iosAlertBtnPrimary {
+  font-weight: 600;
+}
+
+.iosAlertBtn:active {
+  background: rgba(60, 60, 67, 0.12);
+}
+
+.iosAlertBtn:disabled {
+  color: rgba(60, 60, 67, 0.3) !important;
+  background: transparent !important;
+  cursor: not-allowed;
+}
+
+.pickerPopup :deep(.van-picker__toolbar) {
+  border-bottom: 0.5px solid rgba(60, 60, 67, 0.14);
 }
 </style>
